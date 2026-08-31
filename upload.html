@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="ja" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>物件上傳 | Johnny AI</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="/vendor/phosphor/regular.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      fontFamily: { sans: ['Geist', 'system-ui', 'sans-serif'] },
+      colors: {
+        gold:  { DEFAULT: '#e0b97a', light: '#f0d080', dark: '#c9973a', muted: 'rgba(224,185,122,0.12)' },
+        surface:{ DEFAULT: '#0a0a0f', card: '#111118', elevated: '#16161f' },
+        border:{ DEFAULT: '#252538', subtle: '#1e1e30' },
+        muted: '#888', dim: '#555', good: '#4ade80', warn: '#fbbf24', bad: '#f87171', info: '#60a5fa',
+      }
+    }
+  }
+}
+</script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0a0a0f; color: #fff; }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: #0a0a0f; }
+  ::-webkit-scrollbar-thumb { background: #252538; border-radius: 2px; }
+  .form-input { width: 100%; background: #0a0a0f; border: 1px solid #252538; border-radius: 12px; color: #fff; padding: 11px 14px; font-size: 14px; font-family: inherit; outline: none; transition: border-color 0.2s; }
+  .form-input:focus { border-color: #e0b97a; }
+  .form-input::placeholder { color: #555; }
+  textarea.form-input { resize: vertical; min-height: 80px; }
+  select.form-input { appearance: none; background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23888' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 36px; }
+</style>
+</head>
+<body class="font-sans antialiased p-5 max-w-2xl mx-auto">
+
+<a href="/" class="inline-block text-xs text-dim hover:text-gold transition-colors duration-200 mb-1">← 儀表板</a>
+<div class="flex items-center gap-4 mb-5">
+  <h1 class="text-xl font-bold text-gold">物件上傳</h1>
+  <div class="flex items-center gap-3 ml-auto">
+    <a href="/listings" class="text-xs text-dim hover:text-muted transition-colors duration-200">全部物件</a>
+    <a href="/map" class="text-xs text-dim hover:text-muted transition-colors duration-200">地圖</a>
+    <a href="/collection" class="text-xs text-gold hover:text-gold-light transition-colors duration-200">物件搜尋</a>
+  </div>
+</div>
+<p class="text-sm text-dim mb-6">上傳新盤源 - AI 自動生成文案 - 確認後入庫</p>
+
+<form id="uploadForm">
+  <div class="bg-surface-card border border-border rounded-2xl p-5 mb-4">
+    <h2 class="text-sm font-bold text-gold mb-4">基本情報</h2>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div class="sm:col-span-2">
+        <label class="block text-xs text-dim mb-1.5"><span class="text-bad">*</span> 地址</label>
+        <input type="text" name="address" class="form-input" placeholder="例: 東京都渋谷区本町1-2-3" required>
+      </div>
+      <div>
+        <label class="block text-xs text-dim mb-1.5"><span class="text-bad">*</span> 価格 (万円)</label>
+        <input type="number" name="price" class="form-input" placeholder="6980" required>
+      </div>
+      <div>
+        <label class="block text-xs text-dim mb-1.5"><span class="text-bad">*</span> 面積 (m2)</label>
+        <input type="number" name="size_sqm" class="form-input" placeholder="55.2" step="0.1" required>
+      </div>
+      <div>
+        <label class="block text-xs text-dim mb-1.5">間取り</label>
+        <select name="room_layout" class="form-input">
+          <option value="">選擇</option>
+          <option>1K</option><option>1DK</option><option>1LDK</option>
+          <option>2K</option><option>2DK</option><option>2LDK</option>
+          <option>3K</option><option>3DK</option><option>3LDK</option>
+          <option>4LDK</option><option>5LDK以上</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs text-dim mb-1.5">築年数</label>
+        <input type="number" name="age" class="form-input" placeholder="15">
+      </div>
+      <div>
+        <label class="block text-xs text-dim mb-1.5">最近車站</label>
+        <input type="text" name="station" class="form-input" placeholder="JR山手線 渋谷駅">
+      </div>
+      <div>
+        <label class="block text-xs text-dim mb-1.5">步行 (分鐘)</label>
+        <input type="number" name="walk_min" class="form-input" placeholder="5">
+      </div>
+      <div>
+        <label class="block text-xs text-dim mb-1.5">朝向</label>
+        <select name="orientation" class="form-input">
+          <option value="">選擇</option>
+          <option>南</option><option>南東</option><option>南西</option>
+          <option>東</option><option>西</option><option>北</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs text-dim mb-1.5">構造</label>
+        <select name="structure" class="form-input">
+          <option value="">選擇</option>
+          <option>RC</option><option>SRC</option><option>木造</option><option>鉄骨</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs text-dim mb-1.5">類型</label>
+        <select name="type" class="form-input">
+          <option>マンション</option><option>アパート</option><option>戸建</option><option>土地</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs text-dim mb-1.5">樓層</label>
+        <input type="number" name="floor" class="form-input" placeholder="8">
+      </div>
+      <div>
+        <label class="block text-xs text-dim mb-1.5">總樓層</label>
+        <input type="number" name="total_floors" class="form-input" placeholder="14">
+      </div>
+      <div>
+        <label class="block text-xs text-dim mb-1.5">土地權利</label>
+        <select name="land_rights" class="form-input">
+          <option value="所有権">所有権</option>
+          <option value="借地権">借地権</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div class="bg-surface-card border border-border rounded-2xl p-5 mb-4">
+    <h2 class="text-sm font-bold text-gold mb-2">AI 文案生成</h2>
+    <p class="text-xs text-dim mb-3">填好基本欄位後，撳「AI 生成」自動產出文案同關鍵詞</p>
+    <button type="button" id="aiGenBtn" onclick="generateAI()"
+      class="bg-transparent border border-gold text-gold font-bold px-5 py-2.5 rounded-xl text-sm hover:bg-gold-muted transition-colors duration-200 active:scale-[0.98]">
+      AI 生成文案
+    </button>
+    <div id="aiPreview" class="hidden mt-4">
+      <div class="text-xs font-semibold text-gold mb-1.5">日文文案</div>
+      <div class="bg-surface border border-border rounded-xl p-4 text-sm leading-relaxed whitespace-pre-wrap" id="copyJa"></div>
+      <div class="text-xs font-semibold text-gold mt-3 mb-1.5">中文文案</div>
+      <div class="bg-surface border border-border rounded-xl p-4 text-sm leading-relaxed whitespace-pre-wrap" id="copyZh"></div>
+      <div class="text-xs font-semibold text-gold mt-3 mb-1.5">English Copy</div>
+      <div class="bg-surface border border-border rounded-xl p-4 text-sm leading-relaxed whitespace-pre-wrap" id="copyEn"></div>
+      <div class="text-xs font-semibold text-gold mt-3 mb-1.5">關鍵詞</div>
+      <div id="kwList" class="flex flex-wrap gap-1.5"></div>
+      <div class="bg-bad/5 border border-bad/20 rounded-xl px-4 py-2.5 text-xs text-bad leading-relaxed mt-3">AI生成畫像/文章是示意圖。實際物件可能不同。刊登內容準確性請仲介者自行確認。虛偽表示屬宅地建物取引業法違反。</div>
+    </div>
+  </div>
+
+  <div class="flex gap-3">
+    <button type="submit" class="flex-1 bg-gold hover:bg-gold-dark text-black font-bold py-3.5 rounded-xl text-sm transition-colors duration-200 active:scale-[0.98]">保存為草稿</button>
+    <button type="button" onclick="window.location='/'" class="bg-transparent border border-border text-dim font-bold px-6 py-3.5 rounded-xl text-sm hover:border-gold hover:text-gold transition-colors duration-200">取消</button>
+  </div>
+</form>
+
+<div class="text-sm text-center mt-4 min-h-5" id="statusMsg"></div>
+
+<script>
+const API='/api';
+
+async function generateAI(){
+  const form=document.getElementById('uploadForm');
+  const fd=new FormData(form);const data=Object.fromEntries(fd.entries());
+  if(!data.address||!data.price||!data.size_sqm){showMsg('請先填寫地址、価格、面積','error');return;}
+  showMsg('AI 生成中...','info');
+  document.getElementById('aiGenBtn').disabled=true;
+  try{
+    const r=await fetch(API+'/ai-generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+    const result=await r.json();
+    document.getElementById('copyJa').textContent=result.copy_ja;
+    document.getElementById('copyZh').textContent=result.copy_zh;
+    document.getElementById('copyEn').textContent=result.copy_en;
+    document.getElementById('kwList').innerHTML=(result.keywords||[]).map(k=>`<span class="text-[10px] px-2 py-0.5 rounded-full bg-gold-muted text-gold font-semibold">${k}</span>`).join('');
+    document.getElementById('aiPreview').classList.remove('hidden');
+    showMsg('AI 文案生成完成！請確認後保存','success');
+  }catch(e){showMsg('生成失敗: '+e.message,'error');}
+  finally{document.getElementById('aiGenBtn').disabled=false;}
+}
+
+document.getElementById('uploadForm').addEventListener('submit',async(e)=>{
+  e.preventDefault();
+  const btn=e.target.querySelector('button[type="submit"]');btn.disabled=true;
+  showMsg('保存中...','info');
+  const fd=new FormData(e.target);const data=Object.fromEntries(fd.entries());
+  data.ai_generated_copy=document.getElementById('copyJa')?.textContent||'';
+  data.ai_keywords=Array.from(document.querySelectorAll('.bg-gold-muted')).map(t=>t.textContent);
+  try{
+    const r=await fetch(API+'/upload',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+    const result=await r.json();
+    if(result.code===1){
+      showMsg('保存成功 ID: '+result.id+' (狀態: '+result.status+')','success');
+      if(result.status==='draft'){
+        if(confirm('要立即發佈嗎？')){
+          const cr=await fetch(API+'/confirm/'+result.id,{method:'POST'});
+          const crj=await cr.json();
+          if(crj.code===1){showMsg('已發佈 ID: '+crj.id,'success');setTimeout(()=>window.location.href='/listing/'+crj.id,1500);}
+        }
+      }
+    }else{showMsg((result.error||'保存失敗'),'error');}
+  }catch(e){showMsg('錯誤: '+e.message,'error');}
+  finally{btn.disabled=false;}
+});
+
+function showMsg(msg,cls){const el=document.getElementById('statusMsg');el.textContent=msg;el.className='text-sm text-center mt-4 min-h-5 '+(cls==='success'?'text-good':cls==='error'?'text-bad':cls==='info'?'text-gold':'');}
+</script>
+</body>
+</html>

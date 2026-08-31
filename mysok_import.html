@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="ja" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>多圖分類上傳 | Johnny AI</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="/vendor/phosphor/regular.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      fontFamily: { sans: ['Geist', 'system-ui', 'sans-serif'] },
+      colors: {
+        gold:  { DEFAULT: '#e0b97a', light: '#f0d080', dark: '#c9973a', muted: 'rgba(224,185,122,0.12)' },
+        surface:{ DEFAULT: '#0a0a0f', card: '#111118', elevated: '#16161f' },
+        border:{ DEFAULT: '#252538', subtle: '#1e1e30' },
+        muted: '#888', dim: '#555', good: '#4ade80', warn: '#fbbf24', bad: '#f87171', info: '#60a5fa',
+      }
+    }
+  }
+}
+</script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0a0a0f; color: #fff; }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: #0a0a0f; }
+  ::-webkit-scrollbar-thumb { background: #252538; border-radius: 2px; }
+  .form-input { width: 100%; background: #0a0a0f; border: 1px solid #252538; border-radius: 12px; color: #fff; padding: 11px 14px; font-size: 14px; font-family: inherit; outline: none; transition: border-color 0.2s; }
+  .form-input:focus { border-color: #e0b97a; }
+  .form-input::placeholder { color: #555; }
+  select.form-input { appearance: none; background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23888' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 36px; }
+  textarea.form-input { resize: vertical; min-height: 60px; }
+  .drop-zone { border: 2px dashed #252538; border-radius: 16px; padding: 32px; text-align: center; color: #888; cursor: pointer; transition: all 0.2s; }
+  .drop-zone:hover, .drop-zone.drag-over { border-color: #e0b97a; color: #e0b97a; background: rgba(224,185,122,0.04); }
+  .tab-btn { padding: 8px 16px; border-radius: 10px; cursor: pointer; font-size: 13px; border: 1px solid #252538; background: transparent; color: #888; transition: all 0.2s; }
+  .tab-btn.active { background: rgba(224,185,122,0.08); color: #e0b97a; border-color: #e0b97a; }
+</style>
+</head>
+<body class="font-sans antialiased p-5 max-w-3xl mx-auto">
+
+<a href="/" class="inline-block text-xs text-dim hover:text-gold transition-colors duration-200 mb-1">← 儀表板</a>
+<div class="flex items-center gap-4 mb-4">
+  <h1 class="text-xl font-bold text-gold">多圖分類上傳</h1>
+  <div class="flex items-center gap-3 ml-auto">
+    <a href="/listings" class="text-xs text-dim hover:text-muted transition-colors duration-200">全部物件</a>
+    <a href="/map" class="text-xs text-dim hover:text-muted transition-colors duration-200">地圖</a>
+    <a href="/collection" class="text-xs text-gold hover:text-gold-light transition-colors duration-200">物件搜尋</a>
+  </div>
+</div>
+<p class="text-sm text-dim mb-5">上傳多張分類圖 - AI 按圖片類型專門解析 - 確認後入庫</p>
+
+<div class="flex gap-1 mb-5">
+  <button class="tab-btn active" onclick="switchTab('multi')">多圖分類上傳</button>
+  <button class="tab-btn" onclick="switchTab('single')">單一 flyer</button>
+</div>
+
+<!-- Multi tab -->
+<div id="tab-multi">
+  <div class="bg-surface-card border border-border rounded-2xl p-5 mb-4">
+    <h2 class="text-sm font-bold text-gold mb-3">上傳分類圖片</h2>
+    <div class="drop-zone" id="dropZone">
+      <div class="text-2xl mb-1"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" class="mx-auto"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <div class="text-sm">拖放圖片至此 (PNG/JPG)</div>
+      <div class="text-xs text-dim mt-1">或點擊選取檔案</div>
+      <input type="file" id="fileInput" accept=".png,.jpg,.jpeg" multiple class="hidden">
+    </div>
+    <div id="fileRows" class="mt-2 space-y-1.5"></div>
+    <div class="flex items-center gap-3 mt-3">
+      <button id="uploadBtn" onclick="uploadMultiFiles()" class="bg-gold hover:bg-gold-dark text-black font-bold px-4 py-2 rounded-xl text-sm transition-colors duration-200 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed">上傳全部檔案</button>
+      <span class="text-xs text-dim" id="uploadStatus"></span>
+    </div>
+  </div>
+  <div id="parseStatusArea"></div>
+  <div id="multiParseResult" class="bg-surface-card border border-border rounded-2xl p-5 mb-4 hidden">
+    <h2 class="text-sm font-bold text-gold mb-3">AI 解析結果</h2>
+    <div class="bg-bad/5 border border-bad/20 rounded-xl px-4 py-2.5 text-xs text-bad leading-relaxed mb-4">AI生成畫像/文章是示意圖。虛偽表示屬宅地建物取引業法違反。各欄位請逐項核對原圖後修正。</div>
+    <div id="multiResultFields"></div>
+    <div class="mt-4">
+      <button onclick="submitMultiImport()" class="bg-gold hover:bg-gold-dark text-black font-bold px-5 py-2.5 rounded-xl text-sm transition-colors duration-200 active:scale-[0.98]">提交為草稿</button>
+    </div>
+  </div>
+</div>
+
+<!-- Single tab -->
+<div id="tab-single" class="hidden">
+  <div class="bg-surface-card border border-border rounded-2xl p-5 mb-4">
+    <h2 class="text-sm font-bold text-gold mb-3">單一 MySok 圖檔上傳</h2>
+    <div class="drop-zone" id="dropZoneSingle">
+      <div class="text-2xl mb-1"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" class="mx-auto"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <div class="text-sm">拖放一張完整 MySok flyer (PNG/PDF)</div>
+      <div class="text-xs text-dim mt-1">或點擊選取檔案</div>
+      <input type="file" id="fileInputSingle" accept=".png,.jpg,.jpeg,.pdf" class="hidden">
+    </div>
+    <div id="singleFileInfo" class="mt-2"></div>
+    <div class="flex items-center gap-3 mt-3">
+      <button id="uploadSingleBtn" onclick="uploadSingleFile()" class="bg-gold hover:bg-gold-dark text-black font-bold px-4 py-2 rounded-xl text-sm transition-colors duration-200 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed">上傳並解析</button>
+      <span class="text-xs text-dim" id="singleStatus"></span>
+    </div>
+  </div>
+  <div id="singleParseResult" class="bg-surface-card border border-border rounded-2xl p-5 mb-4 hidden">
+    <h2 class="text-sm font-bold text-gold mb-3">AI 解析結果 (單圖模式)</h2>
+    <div class="bg-bad/5 border border-bad/20 rounded-xl px-4 py-2.5 text-xs text-bad leading-relaxed mb-4">AI生成畫像/文章是示意圖。虛偽表示屬宅地建物取引業法違反。</div>
+    <div id="singleResultFields"></div>
+    <div class="mt-4">
+      <button onclick="submitSingleImport()" class="bg-gold hover:bg-gold-dark text-black font-bold px-5 py-2.5 rounded-xl text-sm transition-colors duration-200 active:scale-[0.98]">提交為草稿</button>
+    </div>
+  </div>
+</div>
+
+<div class="text-sm text-center mt-4 min-h-5" id="statusMsg"></div>
+
+<script>
+const API='/api';
+let multiParsedData=null,singleParsedData=null;
+let multiFiles=[];
+let singleFilePath=null,singleFileId=null;
+
+function switchTab(t){
+  document.querySelectorAll('.tab-btn').forEach((x,i)=>x.classList.toggle('active',(t==='multi'&&i===0)||(t==='single'&&i===1)));
+  document.getElementById('tab-multi').classList.toggle('hidden',t!=='multi');
+  document.getElementById('tab-single').classList.toggle('hidden',t!=='single');
+}
+
+// Drop zone multi
+const dz=document.getElementById('dropZone'),fi=document.getElementById('fileInput');
+dz.addEventListener('click',()=>fi.click());
+dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag-over');});
+dz.addEventListener('dragleave',()=>dz.classList.remove('drag-over'));
+dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('drag-over');handleMultiFiles(e.dataTransfer.files);});
+fi.addEventListener('change',()=>handleMultiFiles(fi.files));
+
+function handleMultiFiles(files){for(let f of files){multiFiles.push({file:f,type:'data_table',floor_label:'',interior_category:'',saved_path:''});}renderMultiFileRows();}
+
+function renderMultiFileRows(){
+  document.getElementById('fileRows').innerHTML=multiFiles.map((mf,i)=>`
+    <div class="flex items-center gap-2 bg-gold-muted/30 rounded-lg px-3 py-1.5 text-xs">
+      <span class="flex-1 text-good truncate">${mf.file.name}</span>
+      <select onchange="multiFiles[${i}].type=this.value;renderMultiFileRows()" class="bg-surface border border-border rounded-lg px-2 py-1 text-xs text-white outline-none">
+        <option value="data_table" ${mf.type==='data_table'?'selected':''}>資料表格</option>
+        <option value="floorplan" ${mf.type==='floorplan'?'selected':''}>平面圖</option>
+        <option value="photo_exterior" ${mf.type==='photo_exterior'?'selected':''}>外觀</option>
+        <option value="photo_interior" ${mf.type==='photo_interior'?'selected':''}>室內</option>
+      </select>
+      ${mf.type==='floorplan'?`<select onchange="multiFiles[${i}].floor_label=this.value" class="bg-surface border border-border rounded-lg px-1 py-1 text-xs text-white outline-none" style="width:60px"><option value="">層</option><option>1階</option><option>2階</option><option>3階</option><option>B1</option><option>其他</option></select>`:''}
+      ${mf.type==='photo_interior'?`<select onchange="multiFiles[${i}].interior_category=this.value" class="bg-surface border border-border rounded-lg px-1 py-1 text-xs text-white outline-none" style="width:60px"><option value="">類</option><option>客廳</option><option>厨房</option><option>浴室</option><option>廁所</option><option>臥室</option><option>和室</option><option>玄關</option><option>陽台</option><option>收納</option><option>其他</option></select>`:''}
+      <span class="text-bad cursor-pointer" onclick="multiFiles.splice(${i},1);renderMultiFileRows()">x</span>
+    </div>`).join('');
+}
+
+async function uploadMultiFiles(){
+  if(multiFiles.length===0){showMsg('請先選擇檔案','error');return;}
+  const btn=document.getElementById('uploadBtn');btn.disabled=true;showMsg('上傳中...','info');
+  const fd=new FormData();for(let mf of multiFiles)fd.append('files',mf.file);
+  try{
+    const r=await fetch(API+'/mysok-upload',{method:'POST',body:fd});const result=await r.json();
+    if(result.code!==1){showMsg('上傳失敗','error');btn.disabled=false;return;}
+    for(let sf of result.files){const mf=multiFiles.find(m=>m.file.name===sf.original_name);if(mf)mf.saved_path=sf.saved_path;}
+    showMsg(result.count+' 個檔案上傳成功，開始 AI 解析...','success');
+    await runMultiParse();
+  }catch(e){showMsg(e.message,'error');}
+  btn.disabled=false;
+}
+
+async function runMultiParse(){
+  const area=document.getElementById('parseStatusArea');
+  area.innerHTML='<div class="bg-info/10 border border-info/20 rounded-xl px-4 py-2.5 text-xs text-info">AI 解析中 (按圖片類型分別處理)...</div>';
+  const dataTables=multiFiles.filter(m=>m.type==='data_table');
+  const floorplans=multiFiles.filter(m=>m.type==='floorplan');
+  const exteriors=multiFiles.filter(m=>m.type==='photo_exterior');
+  const interiors=multiFiles.filter(m=>m.type==='photo_interior');
+  let merged={};
+
+  if(dataTables.length>0){
+    for(let dt of dataTables){
+      if(!dt.saved_path)continue;
+      try{const r=await fetch(API+'/mysok-parse-table',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image_path:dt.saved_path})});const d=await r.json();if(d.code===1)Object.assign(merged,d.data);}catch(e){}
+    }
+  }
+  if(floorplans.length>0){
+    let fpImages=[];
+    for(let fp of floorplans){
+      if(!fp.saved_path)continue;
+      try{const r=await fetch(API+'/mysok-parse-floorplan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image_path:fp.saved_path,floor_label:fp.floor_label})});const d=await r.json();if(d.code===1&&d.data){if(d.data.room_layout)merged.room_layout=d.data.room_layout;if(d.data.size_sqm)merged.size_sqm=d.data.size_sqm;if(d.data.floor_area_by_level)merged.floor_area_by_level=d.data.floor_area_by_level;fpImages.push({url:fp.saved_path,floor_label:fp.floor_label||'未標示'});}}catch(e){}
+    }
+    if(fpImages.length)merged.floorplan_images=fpImages;
+  }
+  if(exteriors.length>0)merged.photos=exteriors.map(e=>e.saved_path).filter(Boolean);
+  if(interiors.length>0)merged.interior_photos=interiors.filter(e=>e.saved_path).map(e=>({url:e.saved_path,photo_category:e.interior_category||'其他',room_label:e.interior_category||''}));
+
+  if(Object.keys(merged).length===0){area.innerHTML='<div class="bg-bad/10 border border-bad/20 rounded-xl px-4 py-2.5 text-xs text-bad">AI 解析無結果。請確認已上傳 data_table 類圖檔。</div>';return;}
+  if(!merged.address)merged.address='';if(!merged.price)merged.price=0;if(!merged.size_sqm)merged.size_sqm=0;
+  multiParsedData=merged;renderMultiResult(merged);
+  area.innerHTML='<div class="bg-good/10 border border-good/20 rounded-xl px-4 py-2.5 text-xs text-good">AI 解析完成</div>';
+}
+
+function renderMultiResult(data){
+  const groups=[
+    {title:'基本情報',fields:[['address','地址'],['price','価格 (万円)'],['size_sqm','面積 (m2)'],['room_layout','間取り'],['type','類型'],['age','築年数'],['built_date_full','建築日期'],['structure','構造'],['roof_type','屋根'],['floors_above','階数'],['orientation','朝向']]},
+    {title:'交通',fields:[['station','車站'],['walk_min','步行 (分)']]},
+    {title:'土地 / 建物',fields:[['land_area_sqm','土地面積 (m2)'],['land_area_tsubo','土地面積 (坪)'],['land_category','土地種類'],['land_rights','土地權利'],['ownership_type','所有権'],['building_coverage_ratio','建蔽率 (%)'],['floor_area_ratio','容積率 (%)'],['city_planning_zone','都市計画'],['use_district','用途地域'],['total_floor_area_sqm','延床面積 (m2)'],['total_floor_area_tsubo','延床面積 (坪)']]},
+    {title:'取引',fields:[['current_status','現況'],['handover_timing','引渡'],['transaction_type','取引形態'],['commission_type','媒介'],['listing_agent_name','仲介業者'],['license_number','免許番号'],['yield_surface','表面利回 (%)'],['yield_net','實質利回 (%)']]},
+    {title:'備考',fields:[['notes_freetext','備考']]},
+  ];
+  let html='';
+  for(let g of groups){
+    html+=`<div class="text-xs font-bold text-gold pt-3 pb-1.5 border-b border-border-subtle mb-2">${g.title}</div>`;
+    for(let [k,label] of g.fields){
+      let v=data[k]||'';
+      html+=`<div class="flex items-center gap-2 py-1"><span class="text-xs text-dim w-28 text-right shrink-0">${label}</span><input id="mf_${k}" type="text" value="${esc(String(v))}" oninput="this.classList.add('border-gold');multiParsedData['${k}']=this.value" class="flex-1 bg-surface border border-border rounded-lg px-2.5 py-1.5 text-sm text-white outline-none focus:border-gold transition-colors duration-200"></div>`;
+    }
+  }
+  document.getElementById('multiResultFields').innerHTML=html;
+  document.getElementById('multiParseResult').classList.remove('hidden');
+}
+
+async function submitMultiImport(){
+  if(!multiParsedData)return;showMsg('提交中...','info');
+  try{const r=await fetch(API+'/mysok-import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(multiParsedData)});const d=await r.json();if(d.code===1)showMsg('已保存為草稿 ID: '+d.id,'success');else showMsg((d.error||'失敗'),'error');}catch(e){showMsg(e.message,'error');}
+}
+
+// Single
+const dzS=document.getElementById('dropZoneSingle'),fiS=document.getElementById('fileInputSingle');
+dzS.addEventListener('click',()=>fiS.click());
+dzS.addEventListener('dragover',e=>{e.preventDefault();dzS.classList.add('drag-over');});
+dzS.addEventListener('dragleave',()=>dzS.classList.remove('drag-over'));
+dzS.addEventListener('drop',e=>{e.preventDefault();dzS.classList.remove('drag-over');handleSingleFile(e.dataTransfer.files[0]);});
+fiS.addEventListener('change',()=>handleSingleFile(fiS.files[0]));
+
+function handleSingleFile(f){if(!f)return;singleFileId=f;document.getElementById('singleFileInfo').innerHTML=`<div class="text-sm text-good mt-2">${f.name}</div>`;}
+
+async function uploadSingleFile(){
+  if(!singleFileId){showMsg('請先選擇檔案','error');return;}
+  const btn=document.getElementById('uploadSingleBtn');btn.disabled=true;document.getElementById('singleStatus').textContent='上傳中...';
+  const fd=new FormData();fd.append('files',singleFileId);
+  try{
+    const r=await fetch(API+'/mysok-upload',{method:'POST',body:fd});const result=await r.json();
+    if(result.code!==1){showMsg('上傳失敗','error');btn.disabled=false;return;}
+    singleFilePath=result.files[0].saved_path;document.getElementById('singleStatus').textContent='上傳完成，解析中...';
+    const pr=await fetch(API+'/mysok-parse-table',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image_path:singleFilePath})});
+    const pd=await pr.json();
+    if(pd.code===1){singleParsedData=pd.data;renderSingleResult(pd.data);document.getElementById('singleParseResult').classList.remove('hidden');document.getElementById('singleStatus').textContent='解析完成';}
+    else{showMsg('解析失敗','error');}
+  }catch(e){showMsg(e.message,'error');}
+  btn.disabled=false;
+}
+
+function renderSingleResult(data){
+  const groups=[
+    {title:'基本情報',fields:[['address','地址'],['price','価格'],['size_sqm','面積'],['room_layout','間取り'],['type','類型'],['age','築年数'],['built_date_full','建築日期'],['structure','構造'],['roof_type','屋根'],['floors_above','階数'],['orientation','朝向']]},
+    {title:'交通',fields:[['station','車站'],['walk_min','步行']]},
+    {title:'土地 / 建物',fields:[['land_area_sqm','土地面積'],['building_coverage_ratio','建蔽率'],['floor_area_ratio','容積率'],['use_district','用途地域'],['total_floor_area_sqm','延床面積']]},
+    {title:'取引',fields:[['current_status','現況'],['handover_timing','引渡'],['listing_agent_name','仲介業者'],['license_number','免許番号'],['yield_surface','利回']]},
+    {title:'備考',fields:[['notes_freetext','備考']]},
+  ];
+  let html='';
+  for(let g of groups){
+    html+=`<div class="text-xs font-bold text-gold pt-3 pb-1.5 border-b border-border-subtle mb-2">${g.title}</div>`;
+    for(let [k,label] of g.fields){html+=`<div class="flex items-center gap-2 py-1"><span class="text-xs text-dim w-28 text-right shrink-0">${label}</span><input id="sf_${k}" type="text" value="${esc(String(data[k]||''))}" oninput="singleParsedData['${k}']=this.value" class="flex-1 bg-surface border border-border rounded-lg px-2.5 py-1.5 text-sm text-white outline-none focus:border-gold transition-colors duration-200"></div>`;}
+  }
+  document.getElementById('singleResultFields').innerHTML=html;
+}
+
+async function submitSingleImport(){
+  if(!singleParsedData)return;
+  try{const r=await fetch(API+'/mysok-import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(singleParsedData)});const d=await r.json();if(d.code===1)showMsg('已保存草稿 ID: '+d.id,'success');else showMsg((d.error||'失敗'),'error');}catch(e){showMsg(e.message,'error');}
+}
+
+function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML;}
+function showMsg(msg,cls){const el=document.getElementById('statusMsg');el.textContent=msg;el.className='text-sm text-center mt-4 min-h-5 '+(cls==='success'?'text-good':cls==='error'?'text-bad':cls==='info'?'text-gold':'');}
+</script>
+</body>
+</html>

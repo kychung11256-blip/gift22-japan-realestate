@@ -1,0 +1,50 @@
+# Secrets / credentials
+.env
+.env.*
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+*secret*
+*token*
+*password*
+
+# Runtime databases and state
+data/*.db
+data/*.db-*
+data/*.sqlite
+data/*.sqlite3
+data/reins_storage_state.json
+data/import_jobs/
+data/backup/
+data/hourly_backup/
+*.bak
+*.backup
+
+# Uploads, generated media, verification screenshots
+uploads/
+verify_screenshots/*.png
+verify_screenshots/*.jpg
+verify_screenshots/*.jpeg
+verify_screenshots/*.webp
+
+# Python / virtualenv / cache
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Node / frontend deps
+node_modules/
+dist/
+build/
+
+# Local agent/runtime artifacts
+.agent-status/
+hub-test-agent2.txt
+*.log

@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="ja" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>物件搜尋 - Johnny AI</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script>
+tailwind.config = {
+  theme: { extend: { fontFamily: { sans: ['Geist', 'system-ui', 'sans-serif'] },
+    colors: {
+      gold:  { DEFAULT: '#e0b97a', light: '#f0d080', dark: '#c9973a', muted: 'rgba(224,185,122,0.12)' },
+      surface:{ DEFAULT: '#0a0a0f', card: '#111118', elevated: '#16161f' },
+      border:{ DEFAULT: '#252538', subtle: '#1e1e30' },
+      muted: '#888', dim: '#555', good: '#4ade80', warn: '#fbbf24', bad: '#f87171', info: '#60a5fa',
+    }
+  }}
+}
+</script>
+<style>
+* { box-sizing: border-box; }
+body { background: #0a0a0f; color: #fff; font-family: 'Geist', system-ui, sans-serif; }
+.glass { background: rgba(17,17,24,0.85); backdrop-filter: blur(12px); border-bottom: 1px solid #252538; }
+input, select { background: #111118; border: 1px solid #252538; color: #fff; border-radius: 0.75rem; padding: 0.75rem 1rem; font-size: 0.875rem; outline: none; transition: border-color 0.2s; }
+input:focus, select:focus { border-color: #e0b97a; }
+.btn-gold { background: #e0b97a; color: #000; font-weight: 700; padding: 0.75rem 1.5rem; border-radius: 9999px; font-size: 0.875rem; cursor: pointer; border: none; transition: all 0.2s; }
+.btn-gold:hover { background: #c9973a; }
+.btn-gold:disabled { opacity: 0.4; cursor: not-allowed; }
+.result-card { background: #111118; border: 1px solid #252538; border-radius: 1rem; padding: 1rem; transition: all 0.2s; cursor: pointer; }
+.result-card:hover { border-color: #e0b97a; }
+.result-card.selected { border-color: #4ade80; background: rgba(74,222,128,0.05); }
+.checkbox { width: 18px; height: 18px; border-radius: 4px; border: 2px solid #555; cursor: pointer; flex-shrink: 0; }
+.checkbox.checked { background: #4ade80; border-color: #4ade80; }
+.spinner { animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body class="min-h-screen">
+
+<header class="sticky top-0 z-50 glass">
+  <div class="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <a href="/" class="flex items-center gap-3">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="#e0b97a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span class="font-bold text-lg tracking-tight">Johnny AI</span>
+      </a>
+      <span class="hidden sm:inline text-xs text-dim">| 物件搜尋</span>
+    </div>
+    <div class="flex items-center gap-4">
+      <a href="/" class="text-xs text-dim hover:text-muted">首頁</a>
+      <a href="/listings" class="text-xs text-dim hover:text-muted">全部物件</a>
+      <a href="/collection" class="text-xs text-gold">物件搜尋</a>
+      <a href="/map" class="text-xs text-dim hover:text-muted">地圖</a>
+    </div>
+  </div>
+</header>
+
+<main class="max-w-4xl mx-auto px-4 py-8">
+  <h1 class="text-2xl font-bold mb-6">物件搜尋</h1>
+
+  <!-- Search form -->
+  <div class="bg-surface-card border border-border rounded-2xl p-6 mb-6">
+    <div class="mb-4">
+      <label class="text-xs text-dim block mb-1.5">搜尋來源</label>
+      <div class="flex gap-2">
+        <button id="srcReins" onclick="setSource('reins')" class="flex-1 px-4 py-2 rounded-xl text-sm font-semibold border transition-colors bg-gold text-black border-gold">REINS</button>
+        <button id="srcSuumo" onclick="setSource('suumo')" class="flex-1 px-4 py-2 rounded-xl text-sm font-semibold border transition-colors bg-surface-elevated text-dim border-border hover:border-gold/50">SUUMO</button>
+      </div>
+    </div>
+    <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4">
+      <div>
+        <label class="text-xs text-dim block mb-1">都道府県</label>
+        <select id="pref" onchange="onPrefChange()"></select>
+      </div>
+      <div>
+        <label class="text-xs text-dim block mb-1">市区町村</label>
+        <select id="city"></select>
+      </div>
+      <div>
+        <label class="text-xs text-dim block mb-1">最低価格（万円）</label>
+        <input id="pmin" type="number" placeholder="3000" value="3000">
+      </div>
+      <div>
+        <label class="text-xs text-dim block mb-1">最高価格（万円）</label>
+        <input id="pmax" type="number" placeholder="10000" value="10000">
+      </div>
+      <div>
+        <label class="text-xs text-dim block mb-1">駅徒歩（分以内）</label>
+        <select id="walk">
+          <option value="5">5分</option><option value="10" selected>10分</option><option value="15">15分</option>
+          <option value="20">20分</option><option value="0">指定なし</option>
+        </select>
+      </div>
+    </div>
+    <div class="flex items-center gap-3">
+      <button id="searchBtn" onclick="doSearch()" class="btn-gold flex items-center gap-2">
+        🔍 搜尋
+      </button>
+      <button id="importBtn" onclick="doImport()" class="btn-gold flex items-center gap-2" style="display:none; background: #4ade80;">
+        匯入選中物件
+      </button>
+      <span id="importNote" class="text-xs text-dim" style="display:none"></span>
+      <span id="status" class="text-sm text-dim"></span>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div id="results">
+    <div id="resultList" class="text-sm text-dim">輸入條件後撳搜尋</div>
+  </div>
+</main>
+
+<script>
+let prefectureData = {};
+let currentListings = [];
+// selected：Map keyed by reins_id（REINS）或 url（SUUMO）→ item data。跨頁保留。
+let selected = new Map();
+let currentSource = 'reins';  // 預設 REINS
+// REINS pagination state
+let curPage = 1;
+let totalPages = 1;
+let pageSize = 50;
+let foundCount = 0;
+let hitLimit = false;
+let pageCache = {};   // page -> listings[]（前端 cache 已睇過頁面）
+const IMPORT_MAX = 20;
+
+function setSource(src) {
+  currentSource = src;
+  document.getElementById('srcReins').className = 'flex-1 px-4 py-2 rounded-xl text-sm font-semibold border transition-colors ' + (src === 'reins' ? 'bg-gold text-black border-gold' : 'bg-surface-elevated text-dim border-border hover:border-gold/50');
+  document.getElementById('srcSuumo').className = 'flex-1 px-4 py-2 rounded-xl text-sm font-semibold border transition-colors ' + (src === 'suumo' ? 'bg-gold text-black border-gold' : 'bg-surface-elevated text-dim border-border hover:border-gold/50');
+  resetSearchState();
+  document.getElementById('resultList').innerHTML = '<div class="text-sm text-dim">輸入條件後撳搜尋</div>';
+  updateImportUI();
+}
+window.setSource = setSource;
+
+function resetSearchState() {
+  // 搜尋條件變更 / 切換 source：page reset 1、selected 清空、pageCache 清空
+  currentListings = [];
+  selected.clear();
+  pageCache = {};
+  curPage = 1; totalPages = 1; foundCount = 0; hitLimit = false;
+}
+
+function updateImportUI() {
+  const btn = document.getElementById('importBtn');
+  const note = document.getElementById('importNote');
+  note.style.display = currentListings.length ? 'inline' : 'none';
+  note.textContent = currentSource === 'reins'
+    ? `REINS 背景匯入已開放：最多 ${IMPORT_MAX} 件，會逐件處理並可 resume`
+    : 'SUUMO 有 rate limit，建議每次最多 3 件';
+  btn.style.display = currentListings.length ? 'inline-flex' : 'none';
+}
+
+function selectionLabel() {
+  const selEl = document.getElementById('selCount');
+  if (selEl) selEl.textContent = selected.size;
+}
+
+async function loadCities() {
+  try {
+    const res = await fetch('/api/collection/cities');
+    const json = await res.json();
+    prefectureData = json.prefectures;
+    const prefSelect = document.getElementById('pref');
+    prefSelect.innerHTML = Object.keys(prefectureData).map(p =>
+      `<option value="${esc(p)}" ${p === '東京都' ? 'selected' : ''}>${esc(p)}</option>`
+    ).join('');
+    onPrefChange();
+  } catch (e) {
+    console.error('Failed to load cities', e);
+  }
+}
+
+function onPrefChange() {
+  const pref = document.getElementById('pref').value;
+  const cities = prefectureData[pref] || [];
+  const citySelect = document.getElementById('city');
+  citySelect.innerHTML = cities.map(c =>
+    `<option value="${esc(c)}">${esc(c)}</option>`
+  ).join('');
+}
+
+async function doSearch() {
+  // 新搜尋（條件可能變更）：reset page/selection/cache
+  resetSearchState();
+  await fetchPage(1, true);
+}
+
+function currentCriteria(page) {
+  return {
+    source: currentSource,
+    pref: document.getElementById('pref').value,
+    city: document.getElementById('city').value,
+    priceMin: parseInt(document.getElementById('pmin').value) || 0,
+    priceMax: parseInt(document.getElementById('pmax').value) || 0,
+    walkMin: parseInt(document.getElementById('walk').value) || 0,
+    maxProperties: 20,
+    page: page,
+  };
+}
+
+async function fetchPage(page, isNewSearch) {
+  const btn = document.getElementById('searchBtn');
+  const status = document.getElementById('status');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner mr-1">⏳</span> 搜尋中...';
+  status.textContent = currentSource === 'reins' ? `REINS 搜尋第 ${page} 頁（需時約 10-20 秒）...` : '搜尋中...';
+
+  // 前端 pageCache：返上一頁即時顯示（淨 REINS）
+  if (currentSource === 'reins' && pageCache[page]) {
+    currentListings = pageCache[page];
+    curPage = page;
+    renderResults(currentListings);
+    updateStatusText();
+    btn.disabled = false; btn.innerHTML = '🔍 搜尋';
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/collection/search', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(currentCriteria(page)),
+    });
+    const json = await res.json();
+    if (json.code === 401 || json.auth) {
+      status.textContent = '⚠️ REINS session 已失效，請重新登入後再搜尋';
+      btn.disabled = false; btn.innerHTML = '🔍 搜尋';
+      return;
+    }
+    currentListings = json.listings || [];
+    if (currentSource === 'reins') {
+      curPage = json.page || page;
+      totalPages = json.total_pages || 1;
+      pageSize = json.page_size || 50;
+      foundCount = json.found || 0;
+      hitLimit = !!json.hit_limit;
+      pageCache[curPage] = currentListings;
+    }
+    renderResults(currentListings);
+    updateStatusText();
+  } catch (e) {
+    status.textContent = '搜尋失敗: ' + e.message;
+  }
+  btn.disabled = false;
+  btn.innerHTML = '🔍 搜尋';
+}
+
+function updateStatusText() {
+  const status = document.getElementById('status');
+  if (currentSource === 'reins') {
+    const from = (curPage - 1) * pageSize + 1;
+    const to = (curPage - 1) * pageSize + currentListings.length;
+    let t = `検索到 ${foundCount} 件（${from}–${to}）｜已選 ${selected.size} 件`;
+    if (hitLimit) t += ' ｜ ※検索結果が500件上限に達しています。条件を絞り込んでください。';
+    status.textContent = t;
+  } else {
+    status.textContent = `找到 ${foundCount || currentListings.length} 件`;
+  }
+}
+
+function goToPage(n) {
+  if (currentSource !== 'reins') return;
+  if (n < 1 || n > totalPages || n === curPage) return;
+  fetchPage(n, false);
+}
+window.goToPage = goToPage;
+
+function renderResults(listings) {
+  const container = document.getElementById('resultList');
+  updateImportUI();
+
+  if (!listings.length) {
+    container.innerHTML = '<div class="text-sm text-dim py-8 text-center">暫無結果</div>';
+    return;
+  }
+
+  if (currentSource === 'reins') {
+    container.innerHTML = `
+      <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <span class="text-sm text-dim">検索到 ${foundCount} 件｜已選 <span id="selCount">${selected.size}</span> 件（單次最多 ${IMPORT_MAX} 件）</span>
+        <span class="flex gap-3 text-xs">
+          <button onclick="selectCurrentPage()" class="text-gold hover:text-gold-light">全選本頁</button>
+          <button onclick="deselectCurrentPage()" class="text-dim hover:text-white">取消本頁</button>
+          <button onclick="clearAllSelection()" class="text-dim hover:text-white">清除全部選擇</button>
+        </span>
+      </div>
+      ${hitLimit ? '<div class="text-[11px] text-warn mb-3">検索結果が500件上限に達しています。条件を絞り込んでください。（顯示數非真實總數）</div>' : ''}
+      ${listings.map((l, i) => `
+        <div class="result-card mb-3 flex items-center gap-3 ${selected.has(l.reins_id) ? 'selected' : ''}" onclick="toggleSelect('${esc(l.reins_id)}', ${i})">
+          <div class="checkbox ${selected.has(l.reins_id) ? 'checked' : ''}"></div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-sm font-bold text-white truncate">${l.price ? l.price.toLocaleString()+'万円' : ''} ${esc(l.layout)}
+                ${l.already_imported ? '<span class="text-[10px] text-good border border-good/40 rounded px-1.5 py-0.5 ml-2">已匯入</span>' : ''}
+              </span>
+              <span class="text-xs text-dim flex-shrink-0 ml-2">${l.area ? l.area+'m²' : ''} ${l.floor ? l.floor+'階' : ''}</span>
+            </div>
+            <div class="text-xs text-dim">${esc(l.building_name)}</div>
+            <div class="text-xs text-dim">${esc(l.address)}</div>
+            <div class="text-xs text-dim">${esc(l.line)} ${esc(l.station)} ${l.walk_min ? '徒歩'+l.walk_min+'分' : ''}</div>
+            <div class="text-[10px] text-dim mt-1">物件番号: ${esc(l.reins_id)} ｜ ${esc(l.built_date)} ｜ 図面: ${l.drawing_available ? '有' : '無'}</div>
+          </div>
+        </div>
+      `).join('')}
+      ${renderPagination()}`;
+    return;
+  }
+
+  // SUUMO 原有顯示
+  container.innerHTML = `
+    <div class="flex items-center justify-between mb-3">
+      <span class="text-sm text-dim">共 ${listings.length} 件 — 勾選後匯入（建議每次最多 3 件）</span>
+      <button onclick="toggleAll()" class="text-xs text-gold hover:text-gold-light">全選/取消</button>
+    </div>
+    ${listings.map((l, i) => `
+      <div class="result-card mb-3 flex items-center gap-3 ${selected.has(l.url) ? 'selected' : ''}" onclick="toggleSelect('${esc(l.url)}', ${i})">
+        <div class="checkbox ${selected.has(l.url) ? 'checked' : ''}"></div>
+        ${l.thumbnail ? `<img src="${esc(l.thumbnail)}" class="w-20 h-14 object-cover rounded-lg flex-shrink-0 bg-surface-elevated" onerror="this.parentElement.removeChild(this)">` : ''}
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-sm font-bold text-white truncate">${l.price ? l.price.toLocaleString()+'万円' : ''} ${esc(l.layout)}</span>
+            <span class="text-xs text-dim flex-shrink-0 ml-2">${l.area ? l.area+'m²' : ''} ${l.age ? '築'+l.age+'年' : ''}</span>
+          </div>
+          <div class="text-xs text-dim">${esc(l.address)}</div>
+          <div class="text-xs text-dim">${esc(l.station)} ${l.walk_min ? '歩'+l.walk_min+'分' : ''}</div>
+        </div>
+      </div>
+    `).join('')}`;
+}
+
+function renderPagination() {
+  if (currentSource !== 'reins' || totalPages <= 1) return '';
+  // 顯示 window：前2 + 當前附近 + 後2
+  const pages = [];
+  const push = n => { if (n >= 1 && n <= totalPages && !pages.includes(n)) pages.push(n); };
+  push(1); push(2);
+  for (let d = -1; d <= 1; d++) push(curPage + d);
+  push(totalPages - 1); push(totalPages);
+  pages.sort((a, b) => a - b);
+  const from = (curPage - 1) * pageSize + 1;
+  const to = (curPage - 1) * pageSize + currentListings.length;
+
+  let inner = '';
+  let prev = 0;
+  for (const n of pages) {
+    if (n - prev > 1) inner += '<span class="px-1 text-dim">…</span>';
+    inner += n === curPage
+      ? `<span class="px-3 py-1.5 rounded-lg bg-gold text-black text-xs font-bold">${n}</span>`
+      : `<button onclick="goToPage(${n})" class="px-3 py-1.5 rounded-lg bg-surface-elevated text-dim text-xs hover:border-gold border border-border">${n}</button>`;
+    prev = n;
+  }
+  return `
+    <div class="flex items-center justify-center gap-1.5 mt-4 flex-wrap">
+      <button onclick="goToPage(${curPage - 1})" ${curPage <= 1 ? 'disabled' : ''} class="px-3 py-1.5 rounded-lg bg-surface-elevated text-dim text-xs border border-border disabled:opacity-40">‹</button>
+      ${inner}
+      <button onclick="goToPage(${curPage + 1})" ${curPage >= totalPages ? 'disabled' : ''} class="px-3 py-1.5 rounded-lg bg-surface-elevated text-dim text-xs border border-border disabled:opacity-40">›</button>
+      <span class="text-[11px] text-dim ml-2">${from}–${to} / ${foundCount} 件</span>
+    </div>`;
+}
+
+function _selKey(l) { return currentSource === 'reins' ? l.reins_id : l.url; }
+
+function toggleSelect(key, idx) {
+  if (selected.has(key)) {
+    selected.delete(key);
+  } else {
+    if (selected.size >= IMPORT_MAX) { alert(`單次最多選 ${IMPORT_MAX} 件`); return; }
+    // 保存 item data（import 要用 reins_id + drawing_available）
+    const item = currentListings[idx];
+    selected.set(key, item || { reins_id: key });
+  }
+  renderResults(currentListings);
+  updateStatusText();
+}
+
+function selectCurrentPage() {
+  // 「全選本頁」：只選當頁，但如果會超過上限就彈提示，唔好偷偷只選頭 N 件
+  const pageKeys = currentListings.map(_selKey).filter(k => !selected.has(k));
+  if (selected.size + pageKeys.length > IMPORT_MAX) {
+    alert(`單次最多選 ${IMPORT_MAX} 件（現已選 ${selected.size} 件，本頁有 ${pageKeys.length} 件未選）`);
+    return;
+  }
+  currentListings.forEach(l => selected.set(_selKey(l), l));
+  renderResults(currentListings);
+  updateStatusText();
+}
+
+function deselectCurrentPage() {
+  currentListings.forEach(l => selected.delete(_selKey(l)));
+  renderResults(currentListings);
+  updateStatusText();
+}
+
+function clearAllSelection() {
+  selected.clear();
+  renderResults(currentListings);
+  updateStatusText();
+}
+
+async function doImport() {
+  if (selected.size === 0) return alert('請先勾選物件');
+  const isReins = currentSource === 'reins';
+  if (isReins && selected.size > IMPORT_MAX) return alert(`REINS 每次最多匯入 ${IMPORT_MAX} 件。`);
+  if (!isReins && selected.size > 3) return alert('SUUMO 有 rate limit，每次最多匯入 3 件。請分批次匯入。');
+  const btn = document.getElementById('importBtn');
+  const status = document.getElementById('status');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner mr-1">⏳</span> 匯入中...';
+
+  if (isReins) {
+    // Background job：立即回 job_id，然後 polling
+    // 跨頁：由 selected Map 攞 item data（唔靠 currentListings）
+    const items = [...selected.values()].map(l => ({
+      reins_id: l.reins_id, drawing_available: !!l.drawing_available,
+    }));
+    try {
+      const res = await fetch('/api/collection/import', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: 'reins', items }),
+      });
+      const json = await res.json();
+      if (json.code !== 1) {
+        status.textContent = '匯入失敗: ' + (json.error || 'unknown');
+        btn.disabled = false; btn.innerHTML = '匯入選中物件';
+        return;
+      }
+      pollReinsJob(json.job_id);
+    } catch (e) {
+      status.textContent = '匯入失敗: ' + e.message;
+      btn.disabled = false; btn.innerHTML = '匯入選中物件';
+    }
+    return;
+  }
+
+  // SUUMO（原有同步流程）
+  status.textContent = `匯入 ${selected.size} 件（每件 delay 3 秒，請稍候）...`;
+  try {
+    const res = await fetch('/api/collection/import', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ urls: [...selected.keys()] }),
+    });
+    const json = await res.json();
+    const failed = json.results.filter(r => r.code !== 1);
+    status.textContent = `✅ 成功匯入 ${json.imported} 件` + (failed.length ? `（${failed.length} 件失敗）` : '');
+    if (json.imported > 0 || failed.length > 0) {
+      renderSuumoImportResults(json.results);
+    }
+  } catch (e) {
+    status.textContent = '匯入失敗: ' + e.message;
+  }
+  btn.disabled = false;
+  btn.innerHTML = '匯入選中物件';
+}
+
+function renderSuumoImportResults(results) {
+  const imported = results.filter(r => r.code === 1);
+  const failed = results.filter(r => r.code !== 1);
+  let html = '<div class="mt-4 space-y-2">';
+  imported.forEach(r => {
+    html += `<div class="result-card" style="border-color:#4ade80">
+      <span class="text-sm text-white">${esc(r.address)}</span>
+      <span class="text-xs text-good ml-2">${r.price ? (parseInt(r.price)>100000?parseInt(r.price)/10000:r.price).toLocaleString()+'万円' : ''}</span>
+      <a href="/listing/${r.id}" class="text-xs text-gold ml-2">查看 →</a>
+    </div>`;
+  });
+  failed.forEach(r => {
+    html += `<div class="result-card" style="border-color:#f87171">
+      <span class="text-sm text-dim truncate">${esc(r.url || '')}</span>
+      <span class="text-xs text-bad ml-2">${esc(r.error || '失敗')}</span>
+    </div>`;
+  });
+  html += '</div>';
+  document.getElementById('resultList').innerHTML = html;
+}
+
+// ── REINS background job polling ──
+async function pollReinsJob(jobId) {
+  const status = document.getElementById('status');
+  const btn = document.getElementById('importBtn');
+  try {
+    const res = await fetch('/api/collection/import-status/' + jobId);
+    const job = await res.json();
+    if (job.code !== 1) {
+      status.textContent = '查詢 job 失敗';
+      btn.disabled = false; btn.innerHTML = '匯入選中物件';
+      return;
+    }
+    renderReinsJobProgress(job);
+
+    if (job.status === 'running') {
+      setTimeout(() => pollReinsJob(jobId), 2000);
+    } else if (job.status === 'session_expired') {
+      status.textContent = '⚠️ REINS session expired — 請重新登入後撳「繼續」';
+      showResumeButton(jobId);
+      btn.disabled = false; btn.innerHTML = '匯入選中物件';
+    } else { // done
+      status.textContent = `✅ 匯入完成 ${job.done_count} / ${job.total} 件`;
+      btn.disabled = false; btn.innerHTML = '匯入選中物件';
+    }
+  } catch (e) {
+    status.textContent = 'polling 失敗: ' + e.message;
+    btn.disabled = false; btn.innerHTML = '匯入選中物件';
+  }
+}
+
+function renderReinsJobProgress(job) {
+  const icons = { success: '✓', partial: '!', failed: '✗', processing: '…', pending: '○' };
+  const statusText = it => {
+    if (it.status === 'success') return it.has_drawing ? '已匯入 / 図面有' : '已匯入 / 図面なし';
+    if (it.status === 'partial') return '已匯入 / 図面取得失敗';
+    if (it.status === 'failed') return '失敗: ' + (it.error || '');
+    if (it.status === 'processing') return '處理中';
+    return '等候中';
+  };
+  const color = it => it.status === 'success' ? '#4ade80' : it.status === 'partial' ? '#fbbf24' : it.status === 'failed' ? '#f87171' : '#555';
+
+  let html = `<div class="text-sm text-dim mb-2 mt-4">匯入中 ${job.done_count} / ${job.total}</div><div class="space-y-1.5">`;
+  job.items.forEach(it => {
+    const link = it.listing_id ? `<a href="/listing/${it.listing_id}" class="text-xs text-gold ml-2">查看物件 →</a>` : '';
+    html += `<div class="result-card flex items-center gap-2 py-2" style="border-color:${color(it)}">
+      <span style="color:${color(it)}; font-weight:700">${icons[it.status] || '○'}</span>
+      <span class="text-xs text-white">${esc(it.reins_id)}</span>
+      <span class="text-xs text-dim">${statusText(it)}</span>
+      ${link}
+    </div>`;
+  });
+  html += '</div>';
+  document.getElementById('resultList').innerHTML = html;
+}
+
+function showResumeButton(jobId) {
+  const el = document.getElementById('resultList');
+  el.insertAdjacentHTML('beforeend',
+    `<button onclick="resumeReinsJob('${jobId}')" class="mt-3 bg-gold text-black font-bold px-4 py-2 rounded-lg text-sm">繼續匯入</button>`);
+}
+
+async function resumeReinsJob(jobId) {
+  await fetch('/api/collection/import-resume/' + jobId, { method: 'POST' });
+  pollReinsJob(jobId);
+}
+
+function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+loadCities();
+</script>
+</body>
+</html>

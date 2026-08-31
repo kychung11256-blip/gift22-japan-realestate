@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="ja" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Johnny AI - 不動產智能平台</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<link rel="stylesheet" href="/vendor/phosphor/regular.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      fontFamily: { sans: ['Geist', 'system-ui', 'sans-serif'] },
+      colors: {
+        gold:  { DEFAULT: '#e0b97a', light: '#f0d080', dark: '#c9973a', muted: 'rgba(224,185,122,0.12)' },
+        surface:{ DEFAULT: '#0a0a0f', card: '#111118', elevated: '#16161f' },
+        border:{ DEFAULT: '#252538', subtle: '#1e1e30' },
+        muted: '#888',
+        dim:   '#555',
+        good:  '#4ade80',
+        warn:  '#fbbf24',
+        bad:   '#f87171',
+        info:  '#60a5fa',
+      }
+    }
+  }
+}
+</script>
+<style>
+  * { box-sizing: border-box; }
+  body { background: #0a0a0f; color: #fff; }
+  .glass { background: rgba(17,17,24,0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-bottom: 1px solid #252538; }
+  @media (prefers-reduced-transparency: reduce) { .glass { background: rgba(17,17,24,0.98); backdrop-filter: none; -webkit-backdrop-filter: none; } }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: #0a0a0f; }
+  ::-webkit-scrollbar-thumb { background: #252538; border-radius: 2px; }
+
+  /* Scroll-reveal */
+  .reveal { opacity: 0; transform: translateY(24px); transition: opacity 0.6s cubic-bezier(0.16,1,0.3,1), transform 0.6s cubic-bezier(0.16,1,0.3,1); }
+  .reveal.visible { opacity: 1; transform: translateY(0); }
+  @media (prefers-reduced-motion: reduce) { .reveal { opacity: 1; transform: none; transition: none; } }
+
+  .chart-wrap { position: relative; width: 100%; height: 220px; }
+  @media (max-width: 640px) { .chart-wrap { height: 180px; } }
+</style>
+</head>
+<body class="min-h-screen font-sans antialiased">
+
+<!-- Header -->
+<header class="sticky top-0 z-50 glass">
+  <div class="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="#e0b97a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span class="font-bold text-lg tracking-tight">Johnny AI</span>
+      <span class="hidden sm:inline text-xs text-dim font-medium">| 不動產智能平台</span>
+    </div>
+    <div class="flex items-center gap-4">
+      <a href="/" class="text-xs text-dim hover:text-muted transition-colors duration-200">首頁</a>
+      <a href="/listings" class="text-xs text-dim hover:text-muted transition-colors duration-200">全部物件</a>
+      <a href="/collection" class="text-xs text-gold hover:text-gold-light transition-colors duration-200">物件搜尋</a>
+      <a href="/map" class="text-xs text-dim hover:text-muted transition-colors duration-200">地圖</a>
+      <span id="weatherChip" class="text-xs text-dim px-2 py-0.5 rounded-full border border-border" style="display:none"></span>
+      <span class="w-2 h-2 rounded-full bg-good"></span>
+      <span class="text-xs text-good font-medium">Live</span>
+    </div>
+  </div>
+</header>
+
+<main class="max-w-7xl mx-auto px-4">
+
+<!-- Hero: Split layout -->
+<section class="pt-20 pb-16 md:pt-24 md:pb-20 reveal">
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+    <div>
+      <h1 class="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tighter leading-none mb-4">
+        日本不動產<br><span class="text-gold">智能分析</span>平台
+      </h1>
+      <p class="text-muted text-base md:text-lg leading-relaxed max-w-[48ch] mb-8">
+        結合不動產市場數據、AI 估價與災害風險分析，為投資者提供一站式決策工具。
+      </p>
+      <!-- Search bar in hero -->
+      <div class="flex flex-col sm:flex-row gap-3">
+        <div class="flex-1 relative">
+          <input id="searchInput"
+            class="w-full bg-surface-card border border-border rounded-xl px-4 py-3 text-sm text-white placeholder-dim outline-none focus:border-gold transition-colors duration-200"
+            type="text"
+            placeholder="渋谷區 1億以下 步行5分鐘 投資用..."
+            onkeydown="if(event.key==='Enter')doSearch()"
+            oninput="showHints(this.value)"
+            onfocus="showHints(this.value)"
+            onblur="setTimeout(()=>document.getElementById('searchHints').classList.add('hidden'),200)">
+          <div id="searchHints" class="absolute top-full left-0 right-0 mt-1.5 bg-surface-card border border-border rounded-xl p-2 hidden z-10 shadow-lg">
+            <div class="text-xs text-dim px-2 mb-1">建議</div>
+            <div id="hintList" class="space-y-0.5"></div>
+          </div>
+        </div>
+        <button onclick="doSearch()"
+          class="bg-gold hover:bg-gold-dark text-black font-bold px-6 py-3 rounded-full text-sm transition-colors duration-200 active:scale-[0.98]">
+          搜尋
+        </button>
+      </div>
+      <!-- Search mode toggle -->
+      <div class="flex items-center gap-2 mt-3">
+        <span class="text-[11px] text-dim">搜尋範圍：</span>
+        <button id="modeLocal" onclick="setSearchMode('local')" class="text-xs px-3 py-1 rounded-full border transition-colors bg-gold text-black border-gold">本地物件</button>
+        <button id="modeReins" onclick="setSearchMode('reins')" class="text-xs px-3 py-1 rounded-full border transition-colors bg-surface-elevated text-dim border-border hover:border-gold/50">REINS 智能搜尋</button>
+        <span id="nlParseInfo" class="text-[10px] text-dim ml-2"></span>
+      </div>
+      <!-- SearchPlan 顯示（REINS 智能搜尋時） -->
+      <div id="planPanel" class="hidden mt-3 bg-surface-card border border-border rounded-xl p-3 text-[11px] leading-relaxed"></div>
+      <!-- Quick tags -->
+      <div class="flex flex-wrap gap-2 mt-3">
+        <button onclick="quickSearch('港区')" class="text-xs px-3 py-1 rounded-full bg-info/10 text-info border border-info/20 hover:border-info/40 transition-colors">港区</button>
+        <button onclick="quickSearch('渋谷区')" class="text-xs px-3 py-1 rounded-full bg-good/10 text-good border border-good/20 hover:border-good/40 transition-colors">渋谷区</button>
+        <button onclick="quickSearch('新宿区')" class="text-xs px-3 py-1 rounded-full bg-warn/10 text-warn border border-warn/20 hover:border-warn/40 transition-colors">新宿区</button>
+        <button onclick="quickSearch('5000万以下')" class="text-xs px-3 py-1 rounded-full bg-info/10 text-info border border-info/20 hover:border-info/40 transition-colors">5000萬以下</button>
+        <button onclick="quickSearch('投資用')" class="text-xs px-3 py-1 rounded-full bg-good/10 text-good border border-good/20 hover:border-good/40 transition-colors">投資用</button>
+        <button onclick="quickSearch('駅近')" class="text-xs px-3 py-1 rounded-full bg-warn/10 text-warn border border-warn/20 hover:border-warn/40 transition-colors">駅近</button>
+      </div>
+    </div>
+    <!-- Right: visual --> 
+    <div class="hidden lg:block">
+      <div class="bg-surface-card border border-border rounded-2xl p-6">
+        <div class="flex items-center justify-between mb-4">
+          <div class="text-xs text-dim font-medium">市場情報</div>
+          <span class="text-[10px] px-2 py-0.5 rounded-full bg-gold/10 text-gold" id="intelStatus">更新中...</span>
+        </div>
+        <div id="intelSummary" class="space-y-3">
+          <div class="text-sm text-dim">讀取最新市場報告...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Results -->
+<section id="resultsSection" class="hidden pb-8 reveal">
+  <div class="flex items-center justify-between mb-4">
+    <h2 class="text-lg font-bold" id="resultsTitle">搜尋結果</h2>
+    <span class="text-xs text-dim" id="resultsCount"></span>
+  </div>
+  <div id="resultsGrid" class="grid grid-cols-4 gap-4"></div>
+</section>
+
+<!-- Operations KPI Bento Grid -->
+<section id="opsKpiSection" class="pb-8 reveal">
+  <div class="flex items-center justify-between mb-5">
+    <h2 class="text-lg font-bold tracking-tight">營運數據</h2>
+    <span class="text-xs text-dim" id="opsUpdated">更新中...</span>
+  </div>
+
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-6" id="opsKpiGrid">
+    <div class="bg-surface-card border border-border rounded-2xl p-5">
+      <div class="text-xs text-dim font-medium">總物件數</div>
+      <div class="text-4xl font-bold text-gold mt-2" id="kpiTotal">—</div>
+    </div>
+    <div class="bg-surface-card border border-border rounded-2xl p-5">
+      <div class="text-xs text-dim font-medium">已發佈</div>
+      <div class="text-4xl font-bold text-good mt-2" id="kpiPublished">—</div>
+    </div>
+    <div class="bg-surface-card border border-border rounded-2xl p-5">
+      <div class="text-xs text-dim font-medium">待審核</div>
+      <div class="text-4xl font-bold text-warn mt-2" id="kpiDraft">—</div>
+    </div>
+    <div class="bg-surface-card border border-border rounded-2xl p-5">
+      <div class="text-xs text-dim font-medium">平均價格</div>
+      <div class="text-4xl font-bold text-info mt-2" id="kpiAvgPrice">—</div>
+    </div>
+  </div>
+</section>
+
+<!-- Market Charts (保留) -->
+<section class="pb-8 reveal">
+  <div class="flex items-center justify-between mb-5">
+    <h2 class="text-lg font-bold tracking-tight">市場數據儀表板</h2>
+    <span class="text-xs text-dim">2026年6月 - 首都圈</span>
+  </div>
+
+  <!-- Charts -->
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+    <div class="bg-surface-card border border-border rounded-2xl p-5">
+      <h3 class="text-sm font-bold mb-4">地區別 m2 單價 (萬円)</h3>
+      <div class="chart-wrap"><canvas id="areaChart"></canvas></div>
+    </div>
+    <div class="bg-surface-card border border-border rounded-2xl p-5">
+      <h3 class="text-sm font-bold mb-4">市場趨勢 (前年同月比 %)</h3>
+      <div class="chart-wrap"><canvas id="trendChart"></canvas></div>
+    </div>
+  </div>
+</section>
+
+<!-- AI Valuation -->
+<section class="pb-12 reveal">
+  <div class="bg-surface-card border border-border rounded-2xl p-5 md:p-6">
+    <div class="flex items-center gap-2 mb-5">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 2a4 4 0 014 4c0 2-2 4-4 8-2-4-4-6-4-8a4 4 0 014-4z" stroke="#e0b97a" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="6" r="1.5" fill="#e0b97a"/></svg>
+      <h2 class="text-lg font-bold">AI 智能估價</h2>
+      <span class="text-[10px] px-2 py-0.5 rounded-full bg-gold-muted text-gold font-semibold">Beta</span>
+    </div>
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
+      <select id="valArea" onchange="updateValuation()"
+        class="w-full bg-surface border border-border rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-gold transition-colors duration-200">
+        <option value="">選擇地區</option>
+      </select>
+      <input id="valSize" type="number" placeholder="面積 (m2)" value="60" oninput="updateValuation()"
+        class="w-full bg-surface border border-border rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-gold transition-colors duration-200 placeholder-dim">
+      <input id="valAge" type="number" placeholder="築年數" value="15" oninput="updateValuation()"
+        class="w-full bg-surface border border-border rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-gold transition-colors duration-200 placeholder-dim">
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+      <div id="valResult" class="space-y-3">
+        <div class="text-sm text-dim">輸入地區、面積、築年數查看估價</div>
+      </div>
+      <div id="riskResult" class="space-y-3">
+        <div class="text-sm text-dim">風險評估將顯示在此</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<script>
+// Data
+const DATA = {
+  "report_date":"2026-06","source":"REINS Market Watch",
+  "summary":{"mansion_trend":"成約件數連續3個月減少，m2單價連續2個月下跌，在庫連續4個月增加","house_trend":"成約件數連續3個月增加，價格連續6個月上升，在庫連續5個月減少"},
+  "mansions":{"transactions":4241,"transactions_yoy":-1.3,"price_per_sqm":82.64,"avg_price":5208,"avg_size":63.02,"avg_age":27.48,"inventory":45995,"inventory_yoy":3.5},
+  "houses":{"transactions":2019,"transactions_yoy":3.9,"avg_price":4006,"avg_age":25.24,"inventory":22893,"inventory_yoy":-1.9},
+  "areas":{"千代田区":{"avg_price_man":8900,"price_per_sqm_man":145.0,"transactions_man":85},"中央区":{"avg_price_man":7800,"price_per_sqm_man":138.0},"港区":{"avg_price_man":12000,"price_per_sqm_man":175.0},"新宿区":{"avg_price_man":6200,"price_per_sqm_man":105.0},"文京区":{"avg_price_man":6800,"price_per_sqm_man":110.0},"台東区":{"avg_price_man":5500,"price_per_sqm_man":95.0},"墨田区":{"avg_price_man":4200,"price_per_sqm_man":75.0},"江東区":{"avg_price_man":5200,"price_per_sqm_man":85.0},"品川区":{"avg_price_man":6500,"price_per_sqm_man":108.0},"目黒区":{"avg_price_man":7200,"price_per_sqm_man":118.0},"大田区":{"avg_price_man":4500,"price_per_sqm_man":78.0},"世田谷区":{"avg_price_man":5800,"price_per_sqm_man":92.0},"渋谷区":{"avg_price_man":9500,"price_per_sqm_man":155.0},"中野区":{"avg_price_man":4800,"price_per_sqm_man":82.0},"杉並区":{"avg_price_man":4600,"price_per_sqm_man":80.0},"豊島区":{"avg_price_man":5100,"price_per_sqm_man":88.0},"北区":{"avg_price_man":3800,"price_per_sqm_man":68.0},"荒川区":{"avg_price_man":3500,"price_per_sqm_man":65.0},"板橋区":{"avg_price_man":3600,"price_per_sqm_man":66.0},"練馬区":{"avg_price_man":4000,"price_per_sqm_man":72.0},"足立区":{"avg_price_man":3200,"price_per_sqm_man":60.0},"葛飾区":{"avg_price_man":3000,"price_per_sqm_man":58.0},"江戸川区":{"avg_price_man":3400,"price_per_sqm_man":62.0},"武蔵野市":{"avg_price_man":5500,"price_per_sqm_man":90.0},"三鷹市":{"avg_price_man":4200,"price_per_sqm_man":75.0},"横浜市":{"avg_price_man":3500,"price_per_sqm_man":62.0},"川崎市":{"avg_price_man":3800,"price_per_sqm_man":68.0},"さいたま市":{"avg_price_man":2800,"price_per_sqm_man":52.0},"千葉市":{"avg_price_man":2500,"price_per_sqm_man":48.0}},
+};
+
+// ── Operations KPI ──
+async function loadOpsKpi() {
+  try {
+    const r = await fetch('/api/dashboard');
+    const d = await r.json();
+    document.getElementById('kpiTotal').textContent = (d.total || 0).toLocaleString();
+    document.getElementById('kpiPublished').textContent = (d.published || 0).toLocaleString();
+    document.getElementById('kpiDraft').textContent = (d.draft || 0).toLocaleString();
+    const avg = d.avg_price || 0;
+    document.getElementById('kpiAvgPrice').innerHTML = avg >= 10000
+      ? (avg/10000).toFixed(1) + '<span class="text-base text-dim"> 億円</span>'
+      : avg.toLocaleString() + '<span class="text-base text-dim"> 万円</span>';
+    document.getElementById('opsUpdated').textContent = '即時';
+  } catch (e) {
+    document.getElementById('opsUpdated').textContent = '無法載入';
+    document.getElementById('kpiTotal').textContent = '—';
+    document.getElementById('kpiPublished').textContent = '—';
+    document.getElementById('kpiDraft').textContent = '—';
+    document.getElementById('kpiAvgPrice').textContent = '—';
+  }
+}
+
+// Init
+async function init(){
+  const sel=document.getElementById('valArea');
+  Object.keys(DATA.areas).sort().forEach(a=>{sel.innerHTML+=`<option value="${a}">${a}</option>`});
+  drawAreaChart();
+  drawTrendChart();
+  loadOpsKpi();
+  loadMarketIntel();
+  loadWeather();
+  await loadAllListings();
+  // Scroll-reveal observer
+  if(!window.matchMedia('(prefers-reduced-motion: reduce)').matches){
+    const obs=new IntersectionObserver((es)=>{es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('visible');obs.unobserve(e.target)}})},{threshold:0.15});
+    document.querySelectorAll('.reveal').forEach(el=>obs.observe(el));
+  }else{
+    document.querySelectorAll('.reveal').forEach(el=>el.classList.add('visible'));
+  }
+}
+
+async function loadAllListings(){
+  try{
+    const r=await fetch('/api/search');
+    const data=await r.json();
+    showResults(data.listings||[],'全部物件');
+  }catch(e){
+    document.getElementById('resultsGrid').innerHTML='<div class="col-span-full text-center py-12 text-dim">無法載入數據，請確認伺服器已啟動</div>';
+  }
+}
+
+function quickSearch(q){document.getElementById('searchInput').value=q;doSearch();}
+
+function showHints(val){
+  const hints=document.getElementById('searchHints');
+  const list=document.getElementById('hintList');
+  if(!val||val.length<1){hints.classList.add('hidden');return;}
+  const suggestions=[
+    {text:'港区',desc:'高級住宅區'},{text:'渋谷区',desc:'商業中心'},{text:'新宿区',desc:'交通樞紐'},
+    {text:'5000万以下',desc:'價格篩選'},{text:'1億以下',desc:'價格篩選'},{text:'投資用',desc:'高回報率'},
+    {text:'駅近',desc:'步行5分鐘內'},{text:'新築',desc:'築5年以內'},
+  ];
+  const v=val.toLowerCase();
+  const filtered=suggestions.filter(s=>s.text.toLowerCase().includes(v)||val.length<2);
+  if(filtered.length===0){hints.classList.add('hidden');return;}
+  list.innerHTML=filtered.slice(0,6).map(s=>`<div class="flex items-center justify-between px-2 py-1.5 rounded-lg hover:bg-gold-muted cursor-pointer text-sm" onmousedown="quickSearch('${s.text}')"><span>${s.text}</span><span class="text-xs text-dim">${s.desc}</span></div>`).join('');
+  hints.classList.remove('hidden');
+}
+
+let searchMode='local';
+function setSearchMode(m){
+  searchMode=m;
+  const on='text-xs px-3 py-1 rounded-full border transition-colors bg-gold text-black border-gold';
+  const off='text-xs px-3 py-1 rounded-full border transition-colors bg-surface-elevated text-dim border-border hover:border-gold/50';
+  document.getElementById('modeLocal').className=m==='local'?on:off;
+  document.getElementById('modeReins').className=m==='reins'?on:off;
+  document.getElementById('planPanel').classList.toggle('hidden',m!=='reins');
+}
+
+async function doSearch(){
+  if(searchMode==='reins'){await doReinsSearch();return;}
+  const q=document.getElementById('searchInput').value.trim().toLowerCase();
+  if(!q){await loadAllListings();return;}
+  try{
+    const r=await fetch('/api/search?q='+encodeURIComponent(q));
+    const data=await r.json();
+    if(data.listings&&data.listings.length>0){showResults(data.listings,`「${q}」`);return;}
+  }catch(e){}
+  try{
+    const r=await fetch('/api/search');
+    const data=await r.json();
+    let results=(data.listings||[]).filter(p=>{
+      const text=`${p.address} ${p.price}万円 ${p.price_per_sqm}万円/m2 ${p.size_sqm}m2 ${p.age}年 ${p.room_layout} ${p.station} ${p.walk_min}分 ${p.orientation} ${p.type} ${p.structure}`.toLowerCase();
+      const tokens=q.split(/[\s,，、]+/);
+      return tokens.every(t=>{
+        if(t==='投資用'||t==='investment')return(p.yield_surface||0)>=4.5;
+        if(t==='駅近'||t==='station')return(p.walk_min||0)<=5;
+        if(t==='新築'||t==='new')return(p.age||0)<=5;
+        if(t.includes('万以下')){const max=parseInt(t.replace(/[^0-9]/g,''));return p.price<=max;}
+        if(t.includes('万以上')){const min=parseInt(t.replace(/[^0-9]/g,''));return p.price>=min;}
+        if(t.includes('億以下')){const max=parseFloat(t.replace(/[^0-9.]/g,''))*10000;return p.price<=max;}
+        if(t.includes('分')||t.includes('min')){const mins=parseInt(t.replace(/[^0-9]/g,''));return(p.walk_min||0)<=mins;}
+        if(t.includes('m2')||t.includes('sqm')){const sz=parseInt(t.replace(/[^0-9]/g,''));return(p.size_sqm||0)>=sz;}
+        return text.includes(t);
+      });
+    });
+    results.sort((a,b)=>{const aM=q.includes(a.address.toLowerCase())?0:1;const bM=q.includes(b.address.toLowerCase())?0:1;return aM-bM;});
+    showResults(results,`「${q}」`);
+  }catch(e){showResults([],`「${q}」`);}
+}
+
+// ── REINS 智能搜尋（自然語言 → SearchPlan → REINS）──
+async function doReinsSearch(){
+  const q=document.getElementById('searchInput').value.trim();
+  const panel=document.getElementById('planPanel');
+  const info=document.getElementById('nlParseInfo');
+  const grid=document.getElementById('resultsGrid');
+  const section=document.getElementById('resultsSection');
+  const title=document.getElementById('resultsTitle');
+  const count=document.getElementById('resultsCount');
+  if(!q){panel.innerHTML='<span class="text-dim">請輸入自然語言搜尋，例如「中央区 8000万円以下 2LDK 景觀好」</span>';return;}
+  panel.classList.remove('hidden');
+  panel.innerHTML='<span class="text-dim">🔄 解析需求 + REINS 搜尋中（約 15-25 秒）...</span>';
+  info.textContent='';
+  try{
+    const r=await fetch('/api/nl-search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:q,page:1})});
+    const d=await r.json();
+    // 顯示 SearchPlan
+    panel.innerHTML=renderPlan(d);
+    if(d.meta&&d.meta.parser)info.textContent=`解析：${d.meta.parser==='rule'?'關鍵字':d.meta.parser==='llm'?'AI':'—'}`;
+    if(d.code===401||d.auth){
+      grid.innerHTML='<div class="col-span-full text-center py-12 text-warn">⚠️ REINS session 已失效，請重新登入</div>';
+      section.classList.remove('hidden');title.textContent='REINS 智能搜尋';count.textContent='';return;
+    }
+    if(d.need_clarification){
+      grid.innerHTML=`<div class="col-span-full text-center py-12 text-dim">${esc(d.error||'需要更多資訊')}<br><span class="text-xs">請講明邊個區、預算、房型</span></div>`;
+      section.classList.remove('hidden');title.textContent='REINS 智能搜尋';count.textContent='';return;
+    }
+    if(d.code!==1){
+      grid.innerHTML=`<div class="col-span-full text-center py-12 text-bad">${esc(d.error||'搜尋失敗')}</div>`;
+      section.classList.remove('hidden');title.textContent='REINS 智能搜尋';count.textContent='';return;
+    }
+    showReinsResults(d.listings||[],d);
+  }catch(e){
+    panel.innerHTML=`<span class="text-bad">搜尋失敗：${esc(e.message)}</span>`;
+  }
+}
+
+function renderPlan(d){
+  const p=d.plan||{};
+  const hf=p.hard_filters||{};
+  let html='<div class="text-gold font-semibold mb-1.5">📋 搜尋計劃（SearchPlan）</div>';
+  if(Object.keys(hf).length){
+    html+='<div class="mb-1"><span class="text-dim">條件：</span>'+Object.entries(hf).map(([k,v])=>`<span class="px-1.5 py-0.5 rounded bg-gold/10 text-gold mr-1">${k}=${Array.isArray(v)?v.join('/'):v}</span>`).join('')+'</div>';
+  }
+  if(p.soft_preferences&&p.soft_preferences.length){
+    html+='<div class="mb-1"><span class="text-dim">偏好（唔係硬性篩選）：</span><span class="text-info">'+p.soft_preferences.join('、')+'</span></div>';
+  }
+  if(p.unsupported_preferences&&p.unsupported_preferences.length){
+    html+='<div class="mb-1"><span class="text-dim">REINS 做唔到（稍後用 AI 評估）：</span><span class="text-warn">'+p.unsupported_preferences.join('、')+'</span></div>';
+  }
+  if(p.clarification_needed&&p.clarification_needed.length){
+    html+='<div class="mb-1"><span class="text-warn">💬 '+p.clarification_needed.join('；')+'</span></div>';
+  }
+  if(d.found!==undefined){
+    html+='<div class="text-dim mt-1">REINS 搵到 '+d.found+' 件'+(d.hit_limit?'（已達 500 件顯示上限，建議收窄條件）':'')+'</div>';
+  }
+  return html;
+}
+
+function showReinsResults(results,d){
+  const grid=document.getElementById('resultsGrid');
+  const section=document.getElementById('resultsSection');
+  const title=document.getElementById('resultsTitle');
+  const count=document.getElementById('resultsCount');
+  title.textContent='REINS 智能搜尋結果';
+  count.textContent=`${results.length} 件（第 1 頁）`;
+  if(!results.length){
+    grid.innerHTML='<div class="col-span-full text-center py-12 text-dim">冇符合條件嘅物件</div>';
+  }else{
+    grid.innerHTML=results.map(l=>`
+      <div class="block bg-surface-card border border-border rounded-2xl p-4 relative transition-all duration-300 hover:border-gold/50">
+        <div class="flex items-center justify-between mb-2"><span class="text-sm font-bold text-gold">${esc(l.building_name||l.address||'')}</span><span class="text-[10px] text-dim">REINS</span></div>
+        <div class="text-2xl font-bold mb-1">${(l.price||0).toLocaleString()}<span class="text-sm text-dim">万</span></div>
+        <div class="text-xs text-dim mb-2">${esc(l.address||'')}</div>
+        <div class="text-xs text-dim mb-2">${l.area?l.area+'m²':''} ${l.layout?esc(l.layout):''} ${l.floor?l.floor+'階':''}</div>
+        <div class="text-xs text-dim mb-2">${esc(l.line||'')} ${esc(l.station||'')} ${l.walk_min?'徒歩'+l.walk_min+'分':''}</div>
+        <div class="text-[10px] text-dim mb-2">物件番号: ${esc(l.reins_id||'')} ｜ 図面: ${l.drawing_available?'有':'無'}</div>
+        <button onclick="importReinsItem('${esc(l.reins_id)}',${!!l.drawing_available},this)" class="w-full mt-1 bg-gold hover:bg-gold-dark text-black text-xs font-bold px-3 py-2 rounded-lg transition-colors">匯入此物件 →</button>
+      </div>
+    `).join('');
+  }
+  section.classList.remove('hidden');
+  section.scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+async function importReinsItem(reinsId,drawing,btn){
+  btn.disabled=true;btn.textContent='匯入中...';
+  try{
+    const r=await fetch('/api/collection/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({source:'reins',items:[{reins_id:reinsId,drawing_available:drawing}]})});
+    const d=await r.json();
+    if(d.code===1){
+      btn.textContent='已加入匯入佇列';
+      // poll job 完成後俾 link
+      pollNlImport(d.job_id,btn,reinsId);
+    }else{
+      btn.textContent='失敗: '+(d.error||'');btn.disabled=false;
+    }
+  }catch(e){btn.textContent='失敗';btn.disabled=false;}
+}
+
+async function pollNlImport(jobId,btn,reinsId){
+  try{
+    const r=await fetch('/api/collection/import-status/'+jobId);
+    const d=await r.json();
+    if(d.code!==1){btn.textContent='查詢失敗';return;}
+    const it=(d.items||[])[0]||{};
+    if(d.status==='running'){btn.textContent=`匯入中（${it.status||''}）...`;setTimeout(()=>pollNlImport(jobId,btn,reinsId),2000);return;}
+    if(it.status==='success'||it.status==='partial'){
+      btn.outerHTML=`<a href="/listing/${it.listing_id}" class="block w-full mt-1 text-center bg-good text-black text-xs font-bold px-3 py-2 rounded-lg">查看物件 →</a>`;
+    }else{
+      btn.textContent='失敗: '+(it.error||'');btn.disabled=false;
+    }
+  }catch(e){btn.textContent='失敗';btn.disabled=false;}
+}
+
+function esc(s){const d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
+
+function showResults(results,query){
+  const grid=document.getElementById('resultsGrid');
+  const section=document.getElementById('resultsSection');
+  const title=document.getElementById('resultsTitle');
+  const count=document.getElementById('resultsCount');
+  const dashboard=document.getElementById('opsKpiSection');
+  title.textContent = query === '全部物件' ? '精選物件' : `搜尋結果: ${query}`;
+  count.textContent=`${results.length} 件`;
+  if(results.length===0){
+    grid.innerHTML='<div class="col-span-full text-center py-12 text-dim">沒有找到匹配的物件<br><span class="text-xs">試試其他搜尋條件</span></div>';
+  }else{
+    grid.innerHTML=results.map(p=>`
+      <a href="/listing/${p.id}" class="block bg-surface-card border border-border rounded-2xl p-4 relative transition-all duration-300 hover:border-gold/50 hover:shadow-lg hover:shadow-gold/5 hover:-translate-y-0.5 no-underline" style="text-decoration:none;color:inherit;">
+        ${(p.yield_surface||0)>=5.5?'<div class="absolute -top-2 right-3 bg-gold text-black text-[10px] font-bold px-2 py-0.5 rounded-full">高回報</div>':''}
+        ${(p.walk_min||0)<=3?'<div class="absolute -top-2 left-3 bg-good text-black text-[10px] font-bold px-2 py-0.5 rounded-full">駅近</div>':''}
+        <div class="flex items-center justify-between mb-2"><span class="text-sm font-bold text-gold">${p.address||''}</span><span class="text-xs text-dim">${p.station||''} ${p.walk_min||0}分</span></div>
+        <div class="text-2xl font-bold mb-1">${(p.price||0).toLocaleString()}<span class="text-sm text-dim">万</span></div>
+        <div class="text-xs text-dim mb-2">${p.price_per_sqm||0}万円/m2 - ${p.size_sqm||0}m2 - ${p.room_layout||''} - 築${p.age||0}年</div>
+        <div class="flex flex-wrap gap-1 mb-2">
+          <span class="text-[10px] px-2 py-0.5 rounded-full bg-good/10 text-good font-semibold">${p.orientation||''}向</span>
+          <span class="text-[10px] px-2 py-0.5 rounded-full bg-info/10 text-info font-semibold">${p.structure||''}</span>
+          <span class="text-[10px] px-2 py-0.5 rounded-full ${(p.yield_surface||0)>=5?'bg-warn/10 text-warn':'bg-info/10 text-info'} font-semibold">表面${p.yield_surface||0}%</span>
+        </div>
+        <div class="flex flex-wrap gap-1">
+          ${riskBadge(p.disaster_flood||p.disaster?.flood||'low','洪水')}
+          ${riskBadge(p.disaster_earthquake||p.disaster?.earthquake||'low','地震')}
+          ${riskBadge(p.disaster_liquefaction||p.disaster?.liquefaction||'low','液状化')}
+          ${riskBadge(p.disaster_tsunami||p.disaster?.tsunami||'low','津波')}
+        </div>
+        <div class="text-xs text-dim mt-2">${p.floor||0}階 / ${p.total_floors||0}階建 - ${p.land_rights||''} - ${p.source==='mysok'?'マイソク':p.source==='upload'?'仲介':'マイソク'}</div>
+      </a>
+    `).join('');
+  }
+  section.classList.remove('hidden');
+  if(query==='全部物件'){dashboard.classList.remove('hidden');}else{dashboard.classList.add('hidden');}
+}
+
+function riskBadge(level,label){
+  const cls=level==='low'?'bg-good/10 text-good':level==='medium'?'bg-warn/10 text-warn':'bg-bad/10 text-bad';
+  return `<span class="text-[10px] px-2 py-0.5 rounded-full font-semibold ${cls}">${label}</span>`;
+}
+
+// Valuation
+function updateValuation(){
+  const area=document.getElementById('valArea').value;
+  const size=parseInt(document.getElementById('valSize').value)||60;
+  const age=parseInt(document.getElementById('valAge').value)||15;
+  const resultDiv=document.getElementById('valResult');
+  const riskDiv=document.getElementById('riskResult');
+  if(!area||!DATA.areas[area]){resultDiv.innerHTML='<div class="text-sm text-dim">請選擇地區</div>';riskDiv.innerHTML='<div class="text-sm text-dim">風險評估將顯示在此</div>';return;}
+  const a=DATA.areas[area];
+  const sqm=a.price_per_sqm_man;
+  const ageFactor=Math.max(0.5,1-Math.max(0,age-5)*0.02);
+  const estPrice=Math.round(sqm*size*ageFactor);
+  const marketAvg=Math.round(sqm*size);
+  const diff=estPrice-marketAvg;
+  const diffPct=((diff/marketAvg)*100).toFixed(1);
+  const areaAvgPrice=a.avg_price_man;
+  const priceDiff=((estPrice-areaAvgPrice)/areaAvgPrice*100).toFixed(1);
+  const monthlyRent=Math.round(estPrice*0.004/10)*10;
+  const surfaceYield=((monthlyRent*12/estPrice)*100).toFixed(1);
+  const netYield=(surfaceYield*0.78).toFixed(1);
+  const areaRisk={'江東区':{flood:'high',earthquake:'low',liquefaction:'medium',tsunami:'medium'},'墨田区':{flood:'medium',earthquake:'medium',liquefaction:'medium',tsunami:'low'},'足立区':{flood:'medium',earthquake:'low',liquefaction:'low',tsunami:'low'},'葛飾区':{flood:'medium',earthquake:'low',liquefaction:'low',tsunami:'low'},'港区':{flood:'medium',earthquake:'low',liquefaction:'low',tsunami:'low'},'中央区':{flood:'medium',earthquake:'medium',liquefaction:'medium',tsunami:'low'}};
+  const risk=areaRisk[area]||{flood:'low',earthquake:'low',liquefaction:'low',tsunami:'low'};
+  resultDiv.innerHTML=`
+    <div class="text-xs text-dim mb-1">AI 估價結果</div>
+    <div class="text-3xl font-bold text-gold">${estPrice.toLocaleString()}<span class="text-sm text-dim">万</span></div>
+    <div class="text-xs text-dim mt-1">基於 ${area} 平均 m2 單價 ${sqm}万 x ${size}m2 x 折舊係數 ${ageFactor.toFixed(2)}</div>
+    <div class="flex items-center gap-2 mt-2 flex-wrap">
+      <span class="text-[10px] px-2 py-0.5 rounded-full font-semibold ${parseFloat(priceDiff)>0?'bg-bad/10 text-bad':'bg-good/10 text-good'}">vs 區平均 ${priceDiff}%</span>
+      <span class="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-info/10 text-info">表面利回 ${surfaceYield}%</span>
+      <span class="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-warn/10 text-warn">實質 ${netYield}%</span>
+    </div>
+    <div class="text-xs text-dim mt-2">預計月租: ${monthlyRent.toLocaleString()}万 - 同區平均成交價: ${areaAvgPrice.toLocaleString()}万</div>`;
+  riskDiv.innerHTML=`
+    <div class="text-xs text-dim mb-2">風險評估</div>
+    <div class="space-y-2">${riskItem('洪水',risk.flood)}${riskItem('地震',risk.earthquake)}${riskItem('液状化',risk.liquefaction)}${riskItem('津波',risk.tsunami)}</div>
+    <div class="text-xs text-dim mt-2">來源: 國土交通省 不動產情報Library</div>`;
+}
+
+function riskItem(label,level){
+  const colors={low:'text-good',medium:'text-warn',high:'text-bad'};
+  const labels={low:'低風險',medium:'中風險',high:'高風險'};
+  return `<div class="flex items-center justify-between py-1"><span class="text-sm">${label}</span><span class="text-xs font-semibold ${colors[level]}">${labels[level]}</span></div>`;
+}
+
+// 市場情報 panel — 地產資訊（情報官報告日本房地產重點 + 地產新聞 RSS）
+let _newsItems = [];
+let _newsIdx = 0;
+let _newsTimer = null;
+
+function loadMarketIntel(){
+  fetch('/api/market-news').then(r=>r.json()).then(d=>{
+    const status=document.getElementById('intelStatus');
+    if(!d || d.code!==1){status.textContent='暫無';return;}
+    status.textContent = d.updated_at ? d.updated_at.slice(0,10) : '即時';
+    const summary=document.getElementById('intelSummary');
+    const escHtml = (s)=>{const div=document.createElement('div');div.textContent=s||'';return div.innerHTML;};
+    let html='';
+    if(d.highlights && d.highlights.length){
+      html += '<div class="text-xs text-dim mb-1">日本房地產重點（情報官 '+escHtml(d.updated_at)+'）</div>';
+      d.highlights.forEach(h=>{
+        html += '<div class="text-xs text-muted leading-relaxed flex gap-1.5"><span class="text-gold flex-none">▪</span><span>'+escHtml(h)+'</span></div>';
+      });
+    }
+    if(d.news && d.news.length){
+      _newsItems = d.news;
+      html += '<div class="mt-3 pt-3 border-t border-border">'
+        + '<div class="text-[10px] text-dim mb-1.5">地產新聞</div>'
+        + '<div id="newsTicker" class="text-xs text-gold leading-relaxed min-h-[2.5rem] transition-opacity duration-300"></div>'
+        + '<div id="newsSource" class="text-[9px] text-dim mt-0.5"></div>'
+        + '</div>';
+    }
+    summary.innerHTML = html;
+    if(_newsItems.length){ _startNewsTicker(); }
+  }).catch(()=>{
+    document.getElementById('intelStatus').textContent='暫無';
+  });
+}
+
+function _startNewsTicker(){
+  if(_newsTimer) clearInterval(_newsTimer);
+  const show = ()=>{
+    const n = _newsItems[_newsIdx % _newsItems.length];
+    const tick = document.getElementById('newsTicker');
+    const src = document.getElementById('newsSource');
+    if(!tick) return;
+    tick.style.opacity = 0;
+    setTimeout(()=>{
+      tick.textContent = n.title;
+      if(src) src.textContent = n.source;
+      tick.style.opacity = 1;
+    }, 300);
+    _newsIdx++;
+  };
+  show();
+  _newsTimer = setInterval(show, 3000);  // 3 秒滾動
+}
+
+// 天氣（Open-Meteo，免 key）— 用瀏覽器定位
+const WMO_ZH = {0:'☀️ 天晴',1:'🌤 大致天晴',2:'⛅ 部分多雲',3:'☁️ 陰',45:'🌫 霧',48:'🌫 霧凇',51:'🌦 毛毛雨',53:'🌦 毛毛雨',55:'🌧 毛毛雨',61:'🌦 小雨',63:'🌧 中雨',65:'🌧 大雨',71:'🌨 小雪',73:'🌨 中雪',75:'❄️ 大雪',80:'🌦 驟雨',81:'🌧 驟雨',82:'⛈ 暴雨',95:'⛈ 雷雨',96:'⛈ 雷雹',99:'⛈ 雷雹'};
+function loadWeather(){
+  const el = document.getElementById('weatherChip');
+  if(!el) return;
+  if(!navigator.geolocation){ el.style.display='none'; return; }
+  navigator.geolocation.getCurrentPosition(pos=>{
+    const lat=pos.coords.latitude, lon=pos.coords.longitude;
+    fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code&timezone=auto`)
+      .then(r=>r.json()).then(d=>{
+        const c = d.current || {};
+        const code = c.weather_code;
+        el.textContent = `${WMO_ZH[code]||'🌡'} ${c.temperature_2m}°C`;
+        el.title = `目前位置 (${lat.toFixed(2)},${lon.toFixed(2)})`;
+        el.style.display = '';  // 成功攞到天氣先至顯示
+      }).catch(()=>{ el.style.display='none'; });
+  }, ()=>{ el.style.display='none'; }, {timeout:8000});
+}
+window.loadWeather = loadWeather;
+
+function drawAreaChart(){
+  const areas=Object.entries(DATA.areas).sort((a,b)=>b[1].price_per_sqm_man-a[1].price_per_sqm_man).slice(0,12);
+  new Chart(document.getElementById('areaChart'),{
+    type:'bar',data:{labels:areas.map(([k])=>k),datasets:[{label:'m2單價 (萬円)',data:areas.map(([,v])=>v.price_per_sqm_man),backgroundColor:'#e0b97a',borderRadius:6,borderSkipped:false}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{grid:{color:'#252538'},ticks:{color:'#555',font:{size:10}}},x:{grid:{display:false},ticks:{color:'#555',font:{size:10}}}}}
+  });
+}
+
+function drawTrendChart(){
+  new Chart(document.getElementById('trendChart'),{
+    type:'line',data:{labels:['2024/06','2024/09','2024/12','2025/03','2025/06','2025/09','2025/12','2026/03','2026/06'],
+    datasets:[
+      {label:'成約件数 YoY%',data:[2.1,1.5,0.8,-0.3,-1.0,-0.7,-1.2,-0.9,-1.3],borderColor:'#e0b97a',backgroundColor:'rgba(224,185,122,0.08)',fill:true,tension:0.4,pointRadius:3,borderWidth:2},
+      {label:'m2単価 YoY%',data:[1.5,1.0,0.5,0.2,-0.3,-0.5,-0.6,-0.7,-0.8],borderColor:'#4ade80',backgroundColor:'rgba(74,222,128,0.05)',fill:true,tension:0.4,pointRadius:3,borderWidth:2}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#888',font:{size:11},usePointStyle:true,padding:16}}},scales:{y:{grid:{color:'#252538'},ticks:{color:'#555',font:{size:10}}},x:{grid:{display:false},ticks:{color:'#555',font:{size:10}}}}}
+  });
+}
+
+init();
+</script>
+</body>
+</html>

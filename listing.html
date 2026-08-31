@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="ja" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>物件詳細 | Johnny AI</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      fontFamily: { sans: ['Geist', 'system-ui', 'sans-serif'] },
+      colors: {
+        gold:  { DEFAULT: '#e0b97a', light: '#f0d080', dark: '#c9973a', muted: 'rgba(224,185,122,0.12)' },
+        surface:{ DEFAULT: '#0a0a0f', card: '#111118', elevated: '#16161f' },
+        border:{ DEFAULT: '#252538', subtle: '#1e1e30' },
+        muted: '#888', dim: '#555', good: '#4ade80', warn: '#fbbf24', bad: '#f87171', info: '#60a5fa',
+      }
+    }
+  }
+}
+</script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0a0a0f; color: #fff; }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: #0a0a0f; }
+  ::-webkit-scrollbar-thumb { background: #252538; border-radius: 2px; }
+
+  /* Photo gallery */
+  .gallery-main { position: relative; overflow: hidden; border-radius: 16px; background: #111118; }
+  .gallery-main img { width: 100%; height: 420px; object-fit: contain; cursor: pointer; transition: opacity 0.3s; background: #0a0a0f; }
+  .gallery-nav { position: absolute; top: 50%; transform: translateY(-50%); width: 40px; height: 40px; border-radius: 50%; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.15); color: #fff; font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; z-index: 2; }
+  .gallery-nav:hover { background: rgba(0,0,0,0.8); }
+  .gallery-prev { left: 12px; }
+  .gallery-next { right: 12px; }
+  .gallery-thumbs { display: flex; gap: 8px; overflow-x: auto; padding: 12px 0; }
+  .gallery-thumbs img { width: 88px; height: 60px; object-fit: cover; border-radius: 8px; cursor: pointer; border: 2px solid transparent; opacity: 0.5; transition: all 0.2s; flex-shrink: 0; }
+  .gallery-thumbs img.active { border-color: #e0b97a; opacity: 1; }
+  .gallery-thumbs img:hover { opacity: 0.8; }
+  .gallery-counter { position: absolute; bottom: 16px; right: 16px; background: rgba(0,0,0,0.6); color: #fff; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 500; z-index: 2; }
+
+  /* Lightbox */
+  .lightbox { position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,0.95); display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity 0.25s; }
+  .lightbox.open { opacity: 1; pointer-events: auto; }
+  .lightbox img { max-width: 95vw; max-height: 90vh; object-fit: contain; border-radius: 4px; }
+  .lb-close { position: absolute; top: 20px; right: 20px; width: 44px; height: 44px; border-radius: 50%; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: #fff; font-size: 22px; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 2; }
+  .lb-close:hover { background: rgba(255,255,255,0.2); }
+  .lb-nav { position: absolute; top: 50%; transform: translateY(-50%); width: 48px; height: 48px; border-radius: 50%; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: #fff; font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 2; }
+  .lb-nav:hover { background: rgba(255,255,255,0.2); }
+  .lb-prev { left: 20px; }
+  .lb-next { right: 20px; }
+  .lb-counter { position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); color: #888; font-size: 13px; z-index: 2; }
+
+  /* Detail table */
+  .detail-table { width: 100%; border-collapse: collapse; }
+  .detail-table th { text-align: left; padding: 12px 16px; font-size: 13px; color: #888; font-weight: 500; width: 200px; min-width: 200px; vertical-align: top; border-bottom: 1px solid #1e1e30; background: #111118; }
+  .detail-table td { padding: 12px 16px; font-size: 14px; font-weight: 600; border-bottom: 1px solid #1e1e30; white-space: normal; word-break: break-word; overflow-wrap: anywhere; line-height: 1.55; vertical-align: top; }
+</style>
+</head>
+<body class="font-sans antialiased">
+
+<!-- Lightbox -->
+<div class="lightbox" id="lightbox" onclick="closeLightbox(event)">
+  <button class="lb-close" onclick="closeLightbox()">✕</button>
+  <button class="lb-nav lb-prev" onclick="event.stopPropagation();navigateLightbox(-1)">‹</button>
+  <img id="lbImg" src="" alt="" onclick="event.stopPropagation()">
+  <button class="lb-nav lb-next" onclick="event.stopPropagation();navigateLightbox(1)">›</button>
+  <div class="lb-counter" id="lbCounter"></div>
+</div>
+
+<!-- Header -->
+<header class="sticky top-0 z-50 bg-surface border-b border-border">
+  <div class="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
+    <a href="/listings" class="text-xs text-dim hover:text-gold transition-colors">← 返回列表</a>
+    <div class="flex items-center gap-3">
+      <a href="/" class="text-xs text-dim hover:text-muted">首頁</a>
+      <a href="/listings" class="text-xs text-dim hover:text-muted">全部物件</a>
+      <a href="/map" class="text-xs text-dim hover:text-muted">地圖</a>
+    </div>
+  </div>
+</header>
+
+<!-- Content -->
+<main class="max-w-5xl mx-auto px-4 pb-24" id="content">
+  <div class="text-center py-16 text-dim">載入中...</div>
+</main>
+
+<script>
+const DISCLAIMER = "※本ページの情報は参考情報です。正確な情報は仲介会社までお問い合わせください。虚偽表示は宅地建物取引業法違反となります。";
+
+let lbImages = [];
+let lbIndex = 0;
+
+function openLightbox(images, index) {
+  lbImages = images;
+  lbIndex = index;
+  document.getElementById('lbImg').src = images[index];
+  document.getElementById('lbCounter').textContent = `${index + 1} / ${images.length}`;
+  document.getElementById('lightbox').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+function closeLightbox(e) {
+  if (e && e.target !== document.getElementById('lightbox')) return;
+  document.getElementById('lightbox').classList.remove('open');
+  document.body.style.overflow = '';
+}
+function navigateLightbox(dir) {
+  lbIndex = (lbIndex + dir + lbImages.length) % lbImages.length;
+  document.getElementById('lbImg').src = lbImages[lbIndex];
+  document.getElementById('lbCounter').textContent = `${lbIndex + 1} / ${lbImages.length}`;
+}
+document.addEventListener('keydown', (e) => {
+  const lb = document.getElementById('lightbox');
+  if (!lb.classList.contains('open')) return;
+  if (e.key === 'Escape') closeLightbox();
+  if (e.key === 'ArrowLeft') navigateLightbox(-1);
+  if (e.key === 'ArrowRight') navigateLightbox(1);
+});
+
+async function load() {
+  const path = window.location.pathname;
+  const id = path.split('/listing/')[1];
+  if (!id) { document.getElementById('content').innerHTML = '<div class="text-center py-16 text-dim">無效的物件 ID</div>'; return; }
+  try {
+    const r = await fetch('/api/listing/' + id);
+    if (!r.ok) throw new Error('not found');
+    const p = await r.json();
+    render(p);
+  } catch (e) {
+    document.getElementById('content').innerHTML = '<div class="text-center py-16 text-dim">物件未找到</div>';
+  }
+}
+
+function render(p) {
+  const allPhotos = (p.photos || []).filter(u => typeof u === 'string');
+  const floorplan = (p.floorplan_images || []).filter(f => f.url || f);
+  const fpUrl = p.floorplan_url || (floorplan.length > 0 ? (floorplan[0].url || floorplan[0]) : '');
+  // REINS：gallery 用 rendered drawing images（floorplan_images）；其他 source 照舊用 photos+floorplan
+  const isReins = p.source === 'reins';
+  const reinsDrawingImgs = isReins ? floorplan.map(f => f.url || f).filter(Boolean) : [];
+  const allImages = isReins && reinsDrawingImgs.length > 0
+    ? reinsDrawingImgs
+    : [...allPhotos, fpUrl].filter(Boolean);
+  const stagedPhotos = (p.staged_photos || []).filter(s => s && s.url);
+  window._stagedPhotos = stagedPhotos;
+  window._listingData = p;
+
+  const sourceMap = {
+    'sample': { label: '示範', cls: 'text-dim' },
+    'upload': { label: '仲介上傳', cls: 'text-good' },
+    'reins': { label: 'REINS', cls: 'text-info' },
+    'suumo': { label: 'SUUMO', cls: 'text-info' },
+    'broker': { label: '仲介', cls: 'text-good' },
+    'mysok': { label: 'MySok', cls: 'text-gold' },
+  };
+  const src = sourceMap[p.source] || sourceMap['upload'];
+
+  const transit = (p.transit_lines || []);
+  const hasTransit = transit.length > 0;
+
+  document.getElementById('content').innerHTML = `
+    <!-- Source + Price -->
+    <div class="flex items-center justify-between mb-4 mt-4">
+      <span class="text-xs font-semibold px-3 py-1 rounded-full bg-surface-card border border-border ${src.cls}">${src.label}</span>
+      <div class="text-right">
+        <div class="text-3xl font-extrabold text-gold">${(p.price||0).toLocaleString()}<span class="text-lg text-dim">万円</span></div>
+        ${p.price_per_sqm > 0 ? `<div class="text-xs text-dim">${p.price_per_sqm}万円/m²</div>` : ''}
+      </div>
+    </div>
+
+    <!-- Photo Gallery -->
+    ${allImages.length > 0 ? `
+    <div class="gallery-main mb-4">
+      <img id="galleryMain" src="${esc(allImages[0])}" alt="物件写真" onclick="openGalleryLightbox(0)">
+      ${allImages.length > 1 ? `
+      <button class="gallery-nav gallery-prev" onclick="event.stopPropagation();galleryPrev()">‹</button>
+      <button class="gallery-nav gallery-next" onclick="event.stopPropagation();galleryNext()">›</button>
+      <div class="gallery-counter"><span id="galleryIdx">1</span> / ${allImages.length}</div>
+      ` : ''}
+    </div>
+    ${allImages.length > 1 ? `
+    <div class="gallery-thumbs mb-6">
+      ${allImages.map((u,i) => `<img src="${esc(u)}" class="${i===0?'active':''}" onclick="galleryJump(${i})" onerror="this.style.display='none'">`).join('')}
+    </div>
+    ` : ''}
+    ` : '<div class="bg-surface-card border border-border rounded-2xl p-8 text-center text-dim mb-6">写真なし</div>'}
+
+    <!-- Title -->
+    <h1 class="text-xl font-bold mb-6">${esc(p.address || '')} ${p.room_layout ? esc(p.room_layout) : ''} ${p.size_sqm ? p.size_sqm+'m²' : ''}</h1>
+
+    <!-- REINS PDFs -->
+    ${p.source === 'reins' && (p.reins_overview_pdf || p.reins_drawing_pdf) ? `
+    <div class="flex gap-3 mb-6">
+      ${p.reins_overview_pdf ? `<a href="${esc(p.reins_overview_pdf)}" target="_blank" rel="noopener" class="flex-1 text-center bg-surface-card border border-gold/40 text-gold text-sm font-semibold px-4 py-3 rounded-xl hover:bg-gold/10 transition-colors">📄 REINS 概要</a>` : ''}
+      ${p.reins_drawing_pdf ? `<a href="${esc(p.reins_drawing_pdf)}" target="_blank" rel="noopener" class="flex-1 text-center bg-surface-card border border-border text-sm font-semibold px-4 py-3 rounded-xl hover:border-gold/50 transition-colors">📐 図面を見る</a>` : `<div class="flex-1 text-center bg-surface-card border border-border text-dim text-sm px-4 py-3 rounded-xl">図面なし</div>`}
+    </div>
+    ` : ''}
+
+    <!-- AI 效果圖 (virtual staging) -->
+    <div class="bg-surface-card border border-border rounded-2xl overflow-hidden mb-6">
+      <div class="px-5 pt-4 pb-0 flex items-center justify-between border-b border-border">
+        <h2 class="text-sm font-bold text-gold pb-3">AI 效果圖 <span class="text-[10px] text-dim font-normal">(虛擬裝修 / 清空預覽)</span></h2>
+        <div class="flex gap-1 pb-0">
+          <button id="tabBtnOriginal" onclick="switchStagingTab('original')" class="px-4 py-2 text-xs font-semibold rounded-t-lg border-b-2 border-gold text-gold">原始相片</button>
+          <button id="tabBtnStaged" onclick="switchStagingTab('staged')" class="px-4 py-2 text-xs font-semibold rounded-t-lg border-b-2 border-transparent text-dim hover:text-gold">AI效果圖${stagedPhotos.length > 0 ? ` (${stagedPhotos.length})` : ''}</button>
+        </div>
+      </div>
+      <div class="p-5">
+        <div id="tabPaneOriginal">
+          ${allPhotos.length > 0 ? `
+          <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            ${allPhotos.map(u => `<img src="${esc(u)}" class="w-full h-32 object-cover rounded-lg cursor-pointer" onclick="openLightbox(${JSON.stringify(allPhotos)},${allPhotos.indexOf(u)})" onerror="this.style.display='none'">`).join('')}
+          </div>` : '<div class="text-xs text-dim py-4 text-center">暫無原始相片</div>'}
+        </div>
+        <div id="tabPaneStaged" class="hidden">
+          ${stagedPhotos.length > 0 ? `
+          <div class="flex justify-end mb-3">
+            <button onclick="openStagingModal('${esc(p.id)}', '')" class="text-xs px-3 py-1.5 rounded-lg bg-gold-muted text-gold border border-gold/30 hover:bg-gold/20 transition-colors font-semibold">🎨 生成AI裝修效果</button>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            ${stagedPhotos.map((s, i) => `
+            <div class="border border-border rounded-xl overflow-hidden relative">
+              <button onclick="event.stopPropagation();deleteStagedPhoto('${esc(p.id)}','${esc(s.url)}')" title="刪除呢張AI效果圖" class="absolute top-1.5 right-1.5 z-10 w-6 h-6 rounded-full bg-bad/80 text-white text-[11px] leading-6 text-center hover:bg-bad transition-colors">🗑</button>
+              <div class="grid grid-cols-2 cursor-pointer" onclick="openStagingViewer(${i})">
+                <div class="relative"><img src="${esc(s.original_url)}" class="w-full h-32 object-cover" onerror="this.style.display='none'"><div class="absolute bottom-1 left-1 bg-black/60 text-[9px] px-1.5 py-0.5 rounded text-white">Before</div></div>
+                <div class="relative"><img src="${esc(s.url)}" class="w-full h-32 object-cover"><div class="absolute bottom-1 left-1 bg-gold/80 text-[9px] px-1.5 py-0.5 rounded text-black font-bold">After</div></div>
+              </div>
+              <div class="px-3 py-2 flex items-center justify-between">
+                <span class="text-[10px] text-dim">${esc(s.room_label || '')} / ${esc(s.style_label || '')} / ${s.mode === 'clear' ? '清空' : '加家具'}</span>
+                <span class="text-[9px] text-warn">※CG/AI生成</span>
+              </div>
+            </div>`).join('')}
+          </div>` : `
+          <div class="text-center py-8">
+            <div class="text-xs text-dim mb-1">未有 AI 效果圖</div>
+            <div class="text-[10px] text-dim mb-4">揀一張內觀相片，用 AI 生成虛擬裝修 / 清空預覽</div>
+            <button onclick="openStagingModal('${esc(p.id)}', '')" class="bg-gold hover:bg-gold-dark text-black font-bold px-6 py-3 rounded-xl text-sm transition-colors">🎨 生成AI裝修效果</button>
+          </div>`}
+        </div>
+      </div>
+    </div>
+
+    <!-- Key Stats -->
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
+      <div class="bg-surface-card border border-border rounded-xl p-4 text-center">
+        <div class="text-[11px] text-dim mb-1">専有面積</div>
+        <div class="text-lg font-bold">${p.size_sqm || '-'}<span class="text-xs text-dim">m²</span></div>
+      </div>
+      <div class="bg-surface-card border border-border rounded-xl p-4 text-center">
+        <div class="text-[11px] text-dim mb-1">間取り</div>
+        <div class="text-lg font-bold">${esc(p.room_layout || '-')}</div>
+      </div>
+      <div class="bg-surface-card border border-border rounded-xl p-4 text-center">
+        <div class="text-[11px] text-dim mb-1">所在階</div>
+        <div class="text-lg font-bold">${p.floor > 0 ? `${p.floor}階` : '-'}${p.total_floors > 0 ? `<span class="text-xs text-dim">/${p.total_floors}階建</span>` : ''}</div>
+      </div>
+      <div class="bg-surface-card border border-border rounded-xl p-4 text-center">
+        <div class="text-[11px] text-dim mb-1">築年数</div>
+        <div class="text-lg font-bold">${p.built_date_full ? `<span class="text-xs text-dim mr-1">${esc(p.built_date_full)}</span>` : ''}${p.age > 0 ? `築${p.age}年` : '-'}</div>
+      </div>
+    </div>
+
+    <!-- Property Details Table -->
+    <div class="bg-surface-card border border-border rounded-2xl overflow-hidden mb-6">
+      <h2 class="px-5 py-4 text-sm font-bold text-gold border-b border-border">物件概要</h2>
+      <table class="detail-table">
+        <tbody>
+          ${row('価格', `${(p.price||0).toLocaleString()}万円`)}
+          ${row('物件番号', esc(p.reins_id))}
+          ${row('物件種別', esc(p.property_type || p.type))}
+          ${row('建物名', esc(p.building_name))}
+          ${row('所在地', esc(p.address))}
+          ${row('間取り', normLayout(p.room_layout))}
+          ${row('専有面積', normArea(p.size_sqm))}
+          ${row('所在階', p.floor > 0 ? `${p.floor}階` : '')}
+          ${row('地上階層', p.floors_above > 0 ? `${p.floors_above}階` : '')}
+          ${row('地下階層', p.underground_floors > 0 ? `${p.underground_floors}階` : '')}
+          ${row('向き', esc(p.orientation))}
+          ${row('バルコニー面積', normArea(p.balcony_sqm))}
+          ${row('築年月', normBuiltDate(p.built_date_full))}
+          ${row('構造', normStructure(p.structure))}
+          ${row('棟総戸数', p.total_units > 0 ? `${p.total_units}戸` : '')}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Transportation (REINS 用 line/station/walk_min；其他 source 用 transit_lines) -->
+    ${(hasTransit || (isReins && (p.line || p.station))) ? `
+    <div class="bg-surface-card border border-border rounded-2xl overflow-hidden mb-6">
+      <h2 class="px-5 py-4 text-sm font-bold text-gold border-b border-border">交通</h2>
+      <table class="detail-table">
+        <tbody>
+          ${hasTransit ? transit.map(t => `
+            <tr>
+              <th>${esc(t.line || '')}</th>
+              <td>${esc(t.station || '')}駅 ${t.walk_min > 0 ? `徒歩${t.walk_min}分` : ''}</td>
+            </tr>
+          `).join('') : ''}
+          ${isReins && (p.line || p.station) ? `
+            <tr>
+              <th>${esc(p.line || '沿線')}</th>
+              <td>${esc(p.station || '')}駅 ${p.walk_min > 0 ? `徒歩${p.walk_min}分` : ''}</td>
+            </tr>
+          ` : ''}
+        </tbody>
+      </table>
+    </div>
+    ` : ''}
+
+    <!-- 土地 / 権利 -->
+    ${(p.land_rights || p.use_district) ? `
+    <div class="bg-surface-card border border-border rounded-2xl overflow-hidden mb-6">
+      <h2 class="px-5 py-4 text-sm font-bold text-gold border-b border-border">土地 / 権利</h2>
+      <table class="detail-table">
+        <tbody>
+          ${row('土地権利', esc(p.land_rights))}
+          ${row('用途地域', esc(p.use_district))}
+        </tbody>
+      </table>
+    </div>
+    ` : ''}
+
+    <!-- 管理 -->
+    ${(p.mgmt_fee || p.repair_reserve || p.management_company || p.management_type || p.parking) ? `
+    <div class="bg-surface-card border border-border rounded-2xl overflow-hidden mb-6">
+      <h2 class="px-5 py-4 text-sm font-bold text-gold border-b border-border">管理</h2>
+      <table class="detail-table">
+        <tbody>
+          ${row('管理費', normMoney(p.mgmt_fee, '円'))}
+          ${row('修繕積立金', normMoney(p.repair_reserve, '円'))}
+          ${row('管理会社', esc(p.management_company))}
+          ${row('管理形態', esc(p.management_type))}
+          ${row('駐車場', esc(p.parking))}
+        </tbody>
+      </table>
+    </div>
+    ` : ''}
+
+    <!-- 取引狀態 -->
+    ${(p.current_status || p.handover_timing || p.transaction_type || p.reins_registered_at || p.reins_updated_at || p.registration_no) ? `
+    <div class="bg-surface-card border border-border rounded-2xl overflow-hidden mb-6">
+      <h2 class="px-5 py-4 text-sm font-bold text-gold border-b border-border">取引状況</h2>
+      <table class="detail-table">
+        <tbody>
+          ${row('現況', esc(p.current_status))}
+          ${row('引渡時期', esc(p.handover_timing))}
+          ${row('取引態様', esc(p.transaction_type))}
+          ${row('登録年月日', esc(p.reins_registered_at))}
+          ${row('最新更新年月日', esc(p.reins_updated_at))}
+          ${row('登録No.', esc(p.registration_no))}
+        </tbody>
+      </table>
+    </div>
+    ` : ''}
+
+    <!-- Floor Plan -->
+    ${fpUrl ? `
+    <div class="bg-surface-card border border-border rounded-2xl overflow-hidden mb-6">
+      <h2 class="px-5 py-4 text-sm font-bold text-gold border-b border-border">間取り図</h2>
+      <div class="p-5 flex justify-center bg-surface">
+        <img src="${esc(fpUrl)}" alt="間取り図" class="max-w-full max-h-96 object-contain cursor-pointer rounded-lg" onclick="openLightbox(['${esc(fpUrl)}'],0)" onerror="this.style.display='none'">
+      </div>
+    </div>
+    ` : ''}
+
+    <!-- Notes / Remarks（如果備考其實係登録No.，就唔重複顯示） -->
+    ${p.notes_freetext && normalizeCompareText(p.notes_freetext) !== normalizeCompareText(p.registration_no) ? `
+    <div class="bg-surface-card border border-border rounded-2xl overflow-hidden mb-6">
+      <h2 class="px-5 py-4 text-sm font-bold text-gold border-b border-border">備考</h2>
+      <div class="p-5 text-sm text-muted leading-relaxed whitespace-pre-wrap">${esc(p.notes_freetext)}</div>
+    </div>
+    ` : ''}
+
+    <!-- Disclaimer -->
+    <div class="bg-bad/5 border border-bad/20 rounded-2xl px-5 py-3.5 text-xs text-bad leading-relaxed mb-6">${DISCLAIMER}</div>
+
+    <!-- Actions -->
+    <div class="flex gap-3">
+      <a href="/listings" class="flex-1 text-center bg-gold hover:bg-gold-dark text-black font-bold py-3.5 rounded-xl text-sm transition-all duration-200 active:scale-[0.98]">戻る</a>
+      ${p.status === 'draft' ? `<button onclick="confirmListing('${esc(p.id)}')" class="flex-1 border border-gold text-gold font-bold py-3.5 rounded-xl text-sm hover:bg-gold-muted transition-all duration-200 active:scale-[0.98]">確認發佈</button>` : ''}
+      <button onclick="deleteListing('${esc(p.id)}')" class="border border-bad/30 text-bad font-bold py-3.5 px-5 rounded-xl text-sm hover:bg-bad/10 hover:border-bad/60 transition-all duration-200 active:scale-[0.98]">刪除</button>
+    </div>
+  `;
+
+  // Gallery state
+  window._galleryIdx = 0;
+  window._galleryImages = allImages.slice();
+  window.openGalleryLightbox = function(i) {
+    // 用 window._galleryImages 避免將 array JSON 塞入 HTML attribute（雙引號會 break）
+    openLightbox(window._galleryImages, i);
+  };
+  window.galleryJump = function(i) {
+    window._galleryIdx = i;
+    document.getElementById('galleryMain').src = window._galleryImages[i];
+    document.getElementById('galleryIdx').textContent = i + 1;
+    document.querySelectorAll('.gallery-thumbs img').forEach((el, j) => el.classList.toggle('active', j === i));
+  };
+  window.galleryPrev = function() {
+    const i = (window._galleryIdx - 1 + window._galleryImages.length) % window._galleryImages.length;
+    window.galleryJump(i);
+  };
+  window.galleryNext = function() {
+    const i = (window._galleryIdx + 1) % window._galleryImages.length;
+    window.galleryJump(i);
+  };
+}
+
+function switchStagingTab(tab) {
+  const paneO = document.getElementById('tabPaneOriginal');
+  const paneS = document.getElementById('tabPaneStaged');
+  const btnO = document.getElementById('tabBtnOriginal');
+  const btnS = document.getElementById('tabBtnStaged');
+  if (!paneO || !paneS) return;
+  const isStaged = tab === 'staged';
+  paneO.classList.toggle('hidden', isStaged);
+  paneS.classList.toggle('hidden', !isStaged);
+  btnO.className = 'px-4 py-2 text-xs font-semibold rounded-t-lg border-b-2 ' + (isStaged ? 'border-transparent text-dim hover:text-gold' : 'border-gold text-gold');
+  btnS.className = 'px-4 py-2 text-xs font-semibold rounded-t-lg border-b-2 ' + (isStaged ? 'border-gold text-gold' : 'border-transparent text-dim hover:text-gold');
+}
+
+/* ── AI Virtual Staging Modal（與 review 頁共用同一個 /api/staging-generate）── */
+const STG_STYLES = [
+  ['modern', '現代簡約'], ['nordic', '北歐'], ['wamodern', '和モダン'], ['hotel', 'ホテルライク']
+];
+const STG_ROOMS = [
+  ['living', '客廳'], ['bedroom', '睡房'], ['kitchen', '廚房'],
+  ['dining', '餐廳'], ['study', '書房'], ['ldk', 'LDK']
+];
+let stgState = { lid: null, photoUrl: null, style: 'modern', mode: 'furnish', room: 'living', result: null, photos: [] };
+
+function openStagingModal(lid, photoUrl) {
+  // photoUrl 可為空 — 咁就要用戶先揀一張內觀相
+  const p = window._listingData || {};
+  const photos = (p.photos || []).filter(u => typeof u === 'string');
+  stgState = { lid, photoUrl: photoUrl || photos[0] || '', style: 'modern', mode: 'furnish', room: 'living', result: null, photos };
+  let modal = document.getElementById('stagingModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'stagingModal';
+    modal.className = 'fixed inset-0 z-[900] bg-black/80 flex items-center justify-center p-4';
+    document.body.appendChild(modal);
+  }
+  renderStagingModal();
+  modal.classList.remove('hidden');
+}
+
+function closeStagingModal() {
+  const modal = document.getElementById('stagingModal');
+  if (modal) modal.classList.add('hidden');
+}
+
+function stgPick(field, value) {
+  stgState[field] = value;
+  stgState.result = null;
+  renderStagingModal();
+}
+
+function renderStagingModal() {
+  const modal = document.getElementById('stagingModal');
+  const s = stgState;
+  const selCls = 'width:100%;background:#0a0a0f;border:1px solid #252538;border-radius:10px;color:#fff;padding:9px 12px;font-size:13px;outline:none;';
+  const photoBtns = s.photos.map((u, i) =>
+    '<img src="' + esc(u) + '" onclick="stgPick(\'photoUrl\',\'' + u.replace(/'/g, "\\'") + '\')" style="width:88px;height:60px;object-fit:cover;border-radius:8px;cursor:pointer;border:2px solid ' +
+    (s.photoUrl === u ? '#e0b97a' : 'transparent') + ';opacity:' + (s.photoUrl === u ? '1' : '0.55') + ';" onerror="this.style.display=\'none\'">').join('');
+  const styleBtns = STG_STYLES.map(([k, label]) =>
+    '<button onclick="stgPick(\'style\',\'' + k + '\')" class="px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ' +
+    (s.style === k ? 'bg-gold text-black border-gold' : 'bg-surface-elevated text-dim border-border hover:border-gold/50') + '">' + label + '</button>').join('');
+  const modeBtns = [['furnish', '加家具'], ['clear', '清空家具']].map(([k, label]) =>
+    '<button onclick="stgPick(\'mode\',\'' + k + '\')" class="flex-1 px-3 py-2 rounded-lg text-xs font-semibold border transition-colors ' +
+    (s.mode === k ? 'bg-gold text-black border-gold' : 'bg-surface-elevated text-dim border-border hover:border-gold/50') + '">' + label + '</button>').join('');
+  const roomOpts = STG_ROOMS.map(([k, label]) =>
+    '<option value="' + k + '"' + (s.room === k ? ' selected' : '') + '>' + label + '</option>').join('');
+
+  let resultHtml = '';
+  if (s.result) {
+    if (s.result.error) {
+      resultHtml = '<div class="mt-4 bg-bad/10 border border-bad/30 rounded-xl p-3 text-xs text-bad">' + esc(s.result.error) + '</div>';
+    } else {
+      resultHtml =
+        '<div class="mt-4 grid grid-cols-2 gap-3">' +
+          '<div><div class="text-[10px] text-dim mb-1">原始相片</div><img src="' + esc(s.photoUrl) + '" class="w-full h-40 object-cover rounded-lg border border-border"></div>' +
+          '<div><div class="text-[10px] text-dim mb-1">AI效果圖（' + (s.result.elapsed_sec || '?') + 's）</div><img src="' + esc(s.result.staged_url) + '" class="w-full h-40 object-cover rounded-lg border border-gold/40"></div>' +
+        '</div>' +
+        '<div class="mt-3 flex gap-2">' +
+          '<button onclick="acceptStaging()" class="flex-1 bg-good hover:bg-good/80 text-black font-bold py-2.5 rounded-xl text-sm transition-colors">✓ 接受（存入listing）</button>' +
+          '<button onclick="runStaging()" class="flex-1 bg-gold hover:bg-gold-dark text-black font-bold py-2.5 rounded-xl text-sm transition-colors">↻ 重新生成</button>' +
+        '</div>';
+    }
+  }
+
+  modal.innerHTML =
+    '<div class="bg-surface-card border border-border rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-5">' +
+      '<div class="flex items-center justify-between mb-4">' +
+        '<h3 class="text-sm font-bold text-gold">🎨 AI 虛擬裝修 / 清空</h3>' +
+        '<button onclick="closeStagingModal()" class="w-7 h-7 rounded-full bg-surface-elevated border border-border text-dim hover:text-gold text-sm">✕</button>' +
+      '</div>' +
+      '<div class="mb-3"><label class="block text-[11px] text-dim mb-1.5">揀內觀相片</label>' +
+        '<div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;">' + photoBtns + '</div></div>' +
+      (s.photoUrl ? '<div class="mb-3"><img src="' + esc(s.photoUrl) + '" class="w-full h-44 object-cover rounded-lg border border-border"></div>' : '') +
+      '<div class="mb-3"><label class="block text-[11px] text-dim mb-1.5">房間類型</label>' +
+        '<select onchange="stgPick(\'room\',this.value)" style="' + selCls + '">' + roomOpts + '</select></div>' +
+      '<div class="mb-3"><label class="block text-[11px] text-dim mb-1.5">風格</label><div class="flex flex-wrap gap-2">' + styleBtns + '</div></div>' +
+      '<div class="mb-4"><label class="block text-[11px] text-dim mb-1.5">模式</label><div class="flex gap-2">' + modeBtns + '</div></div>' +
+      (s.result ? '' : '<button id="stgGenBtn" onclick="runStaging()" class="w-full bg-gold hover:bg-gold-dark text-black font-bold py-3 rounded-xl text-sm transition-colors"' + (s.photoUrl ? '' : ' disabled style="opacity:.4"') + '>生成</button>') +
+      '<div id="stgProgress" class="hidden mt-3 text-center text-xs text-gold">生成中，請稍候（約 2 分鐘）...</div>' +
+      resultHtml +
+    '</div>';
+}
+
+async function runStaging() {
+  const s = stgState;
+  if (!s.photoUrl) { alert('請先揀一張內觀相片'); return; }
+  const btn = document.getElementById('stgGenBtn');
+  if (btn) { btn.disabled = true; btn.style.opacity = '.5'; }
+  const prog = document.getElementById('stgProgress');
+  if (prog) prog.classList.remove('hidden');
+  try {
+    const r = await fetch('/api/staging-generate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ listing_id: s.lid, photo_url: s.photoUrl, room_type: s.room, style: s.style, mode: s.mode })
+    });
+    const d = await r.json();
+    stgState.result = d.code === 1 ? d : { error: d.error || '生成失敗' };
+  } catch (e) {
+    stgState.result = { error: e.message };
+  }
+  renderStagingModal();
+}
+
+async function acceptStaging() {
+  const s = stgState;
+  if (!s.result || !s.result.staged_url) return;
+  try {
+    const r = await fetch('/api/staging-accept/' + s.lid, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        staged_url: s.result.staged_url,
+        original_url: s.photoUrl,
+        room_type: s.result.room_type, room_label: s.result.room_label,
+        style: s.result.style, style_label: s.result.style_label,
+        mode: s.result.mode
+      })
+    });
+    const d = await r.json();
+    if (d.code === 1) {
+      closeStagingModal();
+      load();  // 重新載入 listing，AI效果圖 tab 會顯示新圖
+      setTimeout(() => switchStagingTab('staged'), 600);
+    } else {
+      alert(d.error || '儲存失敗');
+    }
+  } catch (e) { alert(e.message); }
+}
+
+/* ── Staged photo viewer（before/after 放大檢視）+ delete ── */
+function openStagingViewer(i) {
+  const s = (window._stagedPhotos || [])[i];
+  if (!s) return;
+  let v = document.getElementById('stgViewer');
+  if (!v) {
+    v = document.createElement('div');
+    v.id = 'stgViewer';
+    v.className = 'fixed inset-0 z-[950] bg-black/95 flex flex-col p-4';
+    document.body.appendChild(v);
+  }
+  v.innerHTML =
+    '<div class="flex items-center justify-between mb-3 max-w-6xl w-full mx-auto">' +
+      '<div class="text-xs text-dim">' + esc(s.room_label || '') + ' / ' + esc(s.style_label || '') + ' / ' + (s.mode === 'clear' ? '清空' : '加家具') + ' <span class="text-warn ml-2">※CG/AI生成</span></div>' +
+      '<div class="flex items-center gap-2">' +
+        '<button onclick="deleteStagedPhoto(\'' + esc((window._listingData||{}).id||'') + '\',\'' + esc(s.url) + '\')" class="px-3 py-1.5 rounded-lg bg-bad/20 border border-bad/40 text-bad text-xs font-semibold hover:bg-bad/30 transition-colors">🗑 刪除</button>' +
+        '<button onclick="closeStagingViewer()" class="w-8 h-8 rounded-full bg-surface-elevated border border-border text-dim hover:text-gold text-sm">✕</button>' +
+      '</div>' +
+    '</div>' +
+    '<div class="flex-1 grid grid-cols-2 gap-3 max-w-6xl w-full mx-auto min-h-0">' +
+      '<div class="relative flex items-center justify-center bg-surface rounded-xl overflow-hidden">' +
+        '<img src="' + esc(s.original_url) + '" class="max-w-full max-h-full object-contain" onerror="this.style.display=\'none\'">' +
+        '<div class="absolute bottom-3 left-3 bg-black/60 text-xs px-2.5 py-1 rounded text-white">Before 原始</div>' +
+      '</div>' +
+      '<div class="relative flex items-center justify-center bg-surface rounded-xl overflow-hidden">' +
+        '<img src="' + esc(s.url) + '" class="max-w-full max-h-full object-contain">' +
+        '<div class="absolute bottom-3 left-3 bg-gold/85 text-xs px-2.5 py-1 rounded text-black font-bold">After AI效果圖</div>' +
+      '</div>' +
+    '</div>';
+  v.classList.remove('hidden');
+  v.onclick = (e) => { if (e.target === v) closeStagingViewer(); };
+  document.body.style.overflow = 'hidden';
+}
+function closeStagingViewer() {
+  const v = document.getElementById('stgViewer');
+  if (v) v.classList.add('hidden');
+  document.body.style.overflow = '';
+}
+
+async function deleteStagedPhoto(lid, url) {
+  if (!confirm('確定刪除呢張AI效果圖？此操作無法復原。')) return;
+  const endpoint = '/api/staging-delete/' + lid;
+  let r;
+  try {
+    r = await fetch(endpoint, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url })
+    });
+  } catch (e) {
+    // Network-level failure（連唔到 server / CORS / DNS）— fetch 未送出或冇回應
+    alert('刪除請求未能送出（' + e.message + '）。\n請檢查網絡連線後重試。\nURL: ' + endpoint);
+    return;
+  }
+  let d;
+  try {
+    d = await r.json();
+  } catch (e) {
+    alert('伺服器回應異常（HTTP ' + r.status + '），唔係 JSON。請稍後重試。');
+    return;
+  }
+  if (r.ok && d.code === 1) {
+    closeStagingViewer();
+    load();  // 重新載入 — tab 數字同卡片都會跟 DB 更新
+    setTimeout(() => switchStagingTab('staged'), 600);
+  } else {
+    alert('刪除失敗（HTTP ' + r.status + '）: ' + (d.error || 'unknown'));
+  }
+}
+
+function row(label, value) {
+  if (!value) return '';
+  return `<tr><th>${label}</th><td>${value}</td></tr>`;
+}
+
+// ── REINS presentation normalizer（deterministic，唔用 AI）──
+// Parser 保留 REINS 原始值；呢啲只係顯示用，唔會覆蓋 DB raw value。
+function z2h(s) {
+  // 全形英數 → 半形
+  if (!s) return s;
+  return String(s).replace(/[Ａ-Ｚａ-ｚ０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+}
+function normalizeCompareText(value) {
+  // 比較用 normalize：全形英數→半形、trim、移除半形/全形空格、uppercase。
+  // 用嚟判斷 notes_freetext 同 registration_no 係咪同一個登録No.（唔好用 regex 估）。
+  if (value === null || value === undefined) return '';
+  return z2h(String(value)).replace(/[ 　]/g, '').trim().toUpperCase();
+}
+function normLayout(s) { return z2h(s); }        // ３ＬＤＫ → 3LDK
+function normStructure(s) { return z2h(s); }     // ＲＣ → RC
+function normMoney(n, unit) {
+  if (n === null || n === undefined || n === '' || isNaN(Number(n))) return '';
+  return Number(n).toLocaleString() + (unit || '');
+}
+function normArea(n) {
+  if (n === null || n === undefined || n === '' || isNaN(Number(n))) return '';
+  return Number(n) + '㎡';
+}
+function normBuiltDate(s) {
+  // 令和7年8月 → 令和7年8月（2025年8月）；平成16年9月 → 平成16年9月（2004年9月）
+  if (!s) return '';
+  const m = String(s).match(/(令和|平成|昭和)\s*(\d+)\s*年\s*(\d+)?\s*月?/);
+  if (!m) return esc(s);
+  const base = { '令和': 2018, '平成': 1988, '昭和': 1925 }[m[1]];
+  if (!base) return esc(s);
+  const western = base + parseInt(m[2], 10);
+  const month = m[3] ? parseInt(m[3], 10) + '月' : '';
+  return `${esc(s)}（${western}年${month}）`;
+}
+
+function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+async function confirmListing(id) {
+  if (!confirm('發布後會出現在搜尋結果。確定？')) return;
+  try {
+    const r = await fetch('/api/confirm/' + id, { method: 'POST' });
+    const d = await r.json();
+    if (d.code === 1) { alert('已發布'); location.reload(); }
+  } catch (e) { alert('失敗: ' + e.message); }
+}
+
+async function deleteListing(id) {
+  if (!confirm('確定要刪除這個物件？此操作無法復原。')) return;
+  try {
+    const r = await fetch('/api/listing/' + id, { method: 'DELETE' });
+    const d = await r.json();
+    if (d.code === 1) { alert('已刪除'); window.location.href = '/listings'; }
+    else { alert('刪除失敗: ' + (d.error || 'unknown')); }
+  } catch (e) { alert('失敗: ' + e.message); }
+}
+
+load();
+</script>
+</body>
+</html>

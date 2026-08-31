@@ -1,0 +1,296 @@
+{
+  "source": "reins",
+  "search_page": "売買物件検索 (GBK001210)",
+  "_note": "純 capability 記錄，未接 production。selector 係 REINS Vue BVID（動態但穩定）。category: hard_filter=REINS 表單直接搜尋 / post_filter=search result 有資料可二次過濾 / semantic_preference=REINS 無結構化 filter。",
+
+  "target_division": {
+    "johnny_key": "target",
+    "reins_label": "対象区分",
+    "type": "radio",
+    "values": ["在庫", "成約"],
+    "selectors": ["#__BVID__284", "#__BVID__285"],
+    "category": "hard_filter",
+    "note": "在庫=現售；成約=已成交（做 market data 用）"
+  },
+  "sort": {
+    "johnny_key": "sort",
+    "reins_label": "並び順",
+    "type": "select+select(升降)",
+    "values": ["最新順（最終更新年月日＋物件番号）", "価格/賃料", "土地面積", "面積（建物・専有・使用部分）", "㎡単価", "坪単価", "所在地", "建物名", "沿線駅"],
+    "direction_values": ["▲", "▼"],
+    "selectors": ["#__BVID__288", "#__BVID__290"],
+    "category": "hard_filter"
+  },
+
+  "property_type": {
+    "johnny_key": "property_type",
+    "reins_label": "物件種別１",
+    "type": "select",
+    "values": ["売土地", "売一戸建", "売マンション", "売外全(住宅以外建物全部)", "売外一(住宅以外建物一部)"],
+    "selector": "#__BVID__293",
+    "category": "hard_filter",
+    "note": "有第二組 物件種別２(#__BVID__302) 可同時搜兩類。種目１(#__BVID__296)/種目２(#__BVID__299) 係聯動子類。"
+  },
+  "new_or_used": {
+    "johnny_key": "new_or_used",
+    "reins_label": "新築・中古区分",
+    "type": "radio",
+    "values": ["指定なし", "新築", "中古"],
+    "selectors": ["#__BVID__312", "#__BVID__313", "#__BVID__314"],
+    "category": "hard_filter"
+  },
+  "land_rights": {
+    "johnny_key": "land_rights",
+    "reins_label": "土地権利/借地権種類",
+    "type": "radio",
+    "values": ["指定なし", "所有権のみ", "借地権のみ"],
+    "selectors": ["#__BVID__318", "#__BVID__319", "#__BVID__320"],
+    "category": "hard_filter"
+  },
+  "other_conditions": {
+    "johnny_key": "other_conditions",
+    "reins_label": "その他の条件",
+    "type": "checkbox group",
+    "values": ["図面ありのみ", "物件画像ありのみ", "オークションのみ"],
+    "selectors": ["#__BVID__323", "#__BVID__325", "#__BVID__327"],
+    "category": "hard_filter",
+    "note": "図面ありのみ 對 Johnny 好有用（直接篩有圖面物件）"
+  },
+  "company_name": {
+    "johnny_key": "has_company_name",
+    "reins_label": "商号の有無",
+    "type": "radio",
+    "values": ["商号あり", "商号なし"],
+    "selectors": ["#__BVID__331", "#__BVID__332"],
+    "category": "hard_filter"
+  },
+  "transaction_status": {
+    "johnny_key": "transaction_status",
+    "reins_label": "取引状況",
+    "type": "radio",
+    "values": ["指定なし", "公開中のみ", "書面による購入申し込みありのみ", "売主都合で一時紹介停止中のみ"],
+    "selectors": ["#__BVID__336", "#__BVID__337", "#__BVID__338", "#__BVID__339"],
+    "category": "hard_filter"
+  },
+
+  "location": {
+    "johnny_key": "location",
+    "reins_label": "所在地１/所在地２/所在地３",
+    "fields": {
+      "pref": {"reins_label": "都道府県名", "type": "text", "selector": "#__BVID__346", "match": "完全一致", "required_for_residential": true},
+      "city": {"reins_label": "所在地名１", "type": "text", "selector": "#__BVID__350", "match": "partial/前方", "note": "東京23区全域可輸入「23区」"},
+      "address2": {"reins_label": "所在地名２", "type": "text+select(前方/部分)", "selectors": ["#__BVID__353", "#__BVID__355"], "match": "前方/部分"},
+      "building_name": {"reins_label": "建物名", "type": "text", "selector": "#__BVID__363", "match": "partial"},
+      "location2_3": {"reins_label": "所在地２/所在地３", "type": "text group", "selectors": ["#__BVID__367", "#__BVID__384"], "note": "可同時指定最多 3 個地點"}
+    },
+    "category": "hard_filter"
+  },
+
+  "station_line": {
+    "johnny_key": "station_line",
+    "reins_label": "沿線１/沿線２/沿線３",
+    "fields": {
+      "line": {"reins_label": "沿線名", "type": "text", "selector": "#__BVID__397", "match": "完全一致", "note": "輸入ガイド有"},
+      "station": {"reins_label": "駅名", "type": "text", "selector": "#__BVID__401", "match": "完全一致（連絡駅都搜）"},
+      "walk_min": {"reins_label": "駅から徒歩", "type": "text+select(分/ｍ)", "selectors": ["#__BVID__403", "#__BVID__406", "#__BVID__408"], "unit": "分 or ｍ"},
+      "by_car": {"reins_label": "駅から車", "type": "text", "selector": "#__BVID__411", "unit": "km以内"},
+      "by_bus": {"reins_label": "駅からバス", "type": "text", "selector": "#__BVID__414", "unit": "分以内"},
+      "line2_3": {"reins_label": "沿線２/沿線３", "type": "同沿線１", "selectors": ["#__BVID__417 起", "#__BVID__437 起"]},
+      "bus_route": {"reins_label": "バス路線名", "type": "text", "selector": "#__BVID__457", "match": "完全一致"},
+      "bus_stop": {"reins_label": "バス停名称", "type": "text", "selector": "#__BVID__460", "match": "完全一致"},
+      "bus_walk": {"reins_label": "バス停から徒歩", "type": "text+select", "selectors": ["#__BVID__463", "#__BVID__465"], "unit": "分 or ｍ"},
+      "other_transport": {"reins_label": "交通手段名", "type": "text", "selector": "#__BVID__468", "match": "部分一致"}
+    },
+    "category": "hard_filter"
+  },
+
+  "price": {
+    "johnny_key": "price",
+    "reins_label": "価格 ※在庫のみ有効",
+    "type": "range",
+    "unit": "万円",
+    "min_selector": "#__BVID__477",
+    "max_selector": "#__BVID__479",
+    "category": "hard_filter"
+  },
+  "sold_price": {
+    "johnny_key": "sold_price",
+    "reins_label": "成約価格 ※成約のみ有効",
+    "type": "range",
+    "unit": "万円",
+    "min_selector": "#__BVID__482",
+    "max_selector": "#__BVID__484",
+    "category": "hard_filter",
+    "note": "只在 対象区分=成約 時有效"
+  },
+  "tsubo_unit_price": {
+    "johnny_key": "tsubo_unit_price",
+    "reins_label": "坪単価",
+    "type": "range",
+    "unit": "万円/坪",
+    "min_selector": "#__BVID__487",
+    "max_selector": "#__BVID__489",
+    "category": "hard_filter",
+    "note": "㎡単価 都有 (#__BVID__482 同區)"
+  },
+
+  "area": {
+    "johnny_key": "area",
+    "fields": {
+      "land_area": {"reins_label": "土地面積", "type": "range", "unit": "㎡", "min_selector": "#__BVID__497", "max_selector": "#__BVID__499", "applies_to": "土地/戸建/外全"},
+      "building_area": {"reins_label": "建物面積", "type": "range", "unit": "㎡", "min_selector": "#__BVID__502", "max_selector": "#__BVID__504", "applies_to": "戸建/外全"},
+      "exclusive_area": {"reins_label": "専有面積", "type": "range", "unit": "㎡", "min_selector": "#__BVID__507", "max_selector": "#__BVID__509", "applies_to": "マンション/外一"}
+    },
+    "category": "hard_filter"
+  },
+
+  "layout": {
+    "johnny_key": "layout",
+    "fields": {
+      "room_count": {"reins_label": "間取部屋数", "type": "range", "unit": "室", "min_selector": "#__BVID__512", "max_selector": "#__BVID__514"},
+      "room_position": {"reins_label": "部屋位置", "type": "checkbox", "values": ["角部屋"], "selector": "#__BVID__517"},
+      "layout_type": {"reins_label": "間取タイプ", "type": "checkbox group (multi)", "values": ["ワンルーム", "Ｋ", "ＤＫ", "ＬＫ", "ＬＤＫ", "ＳＫ", "ＳＤＫ", "ＳＬＫ", "ＳＬＤＫ"], "selectors": ["#__BVID__522", "#__BVID__524", "#__BVID__526", "#__BVID__528", "#__BVID__530", "#__BVID__532", "#__BVID__534", "#__BVID__536", "#__BVID__538"], "note": "S=納戸。multi-select"}
+    },
+    "category": "hard_filter"
+  },
+
+  "floor": {
+    "johnny_key": "floor",
+    "reins_label": "所在階",
+    "type": "range",
+    "unit": "階",
+    "min_selector": "#__BVID__541",
+    "max_selector": "#__BVID__543",
+    "applies_to": "マンション/外一",
+    "category": "hard_filter"
+  },
+
+  "orientation": {
+    "johnny_key": "orientation",
+    "reins_label": "バルコニー方向/採光面方向",
+    "type": "select",
+    "values": ["北", "北東", "東", "南東", "南", "南西", "西", "北西"],
+    "selector": "#__BVID__546",
+    "category": "hard_filter",
+    "note": "接道方向(#__BVID__549) 係土地/戸建用，同樣 8 方位"
+  },
+
+  "land_road": {
+    "johnny_key": "land_road",
+    "fields": {
+      "road_situation": {"reins_label": "接道状況", "type": "select", "values": ["一方", "角地", "三方", "四方", "二方"], "selector": "#__BVID__552"},
+      "road_contact": {"reins_label": "接道接面", "type": "text", "unit": "m以上", "selector": "#__BVID__555"},
+      "road_width": {"reins_label": "接道幅員", "type": "text", "unit": "m以上", "selector": "#__BVID__558"}
+    },
+    "category": "hard_filter",
+    "applies_to": "土地/戸建/外全"
+  },
+
+  "zoning": {
+    "johnny_key": "zoning",
+    "fields": {
+      "city_planning": {"reins_label": "都市計画", "type": "select", "values": ["市街", "調整", "非線引き", "域外", "準都市"], "selector": "#__BVID__561"},
+      "use_district": {"reins_label": "用途地域", "type": "select", "values": ["一低", "二中", "二住", "近商", "商業", "準工", "工業", "工専", "二低", "一中", "一住", "準住", "田園", "定めなし"], "selector": "#__BVID__564"},
+      "best_use": {"reins_label": "最適用途", "type": "select", "values": ["住宅用地", "マンション用地", "ビル用地", "店舗用地", "工業用地", "事務所用地", "駐車場用地", "リゾート向", "..."], "selector": "#__BVID__567"}
+    },
+    "category": "hard_filter"
+  },
+
+  "building_condition": {
+    "johnny_key": "building_condition",
+    "reins_label": "建築条件",
+    "type": "select",
+    "values": ["有", "無"],
+    "selector": "#__BVID__570",
+    "applies_to": "土地",
+    "category": "hard_filter"
+  },
+  "owner_change": {
+    "johnny_key": "owner_change",
+    "reins_label": "オーナーチェンジ",
+    "type": "select",
+    "values": ["オーナーチェンジのみ", "オーナーチェンジを除く"],
+    "selector": "#__BVID__573",
+    "applies_to": "マンション/外全/外一",
+    "category": "hard_filter",
+    "note": "投資搜尋特別有用"
+  },
+  "parking": {
+    "johnny_key": "parking",
+    "reins_label": "駐車場の有無",
+    "type": "select",
+    "values": ["有／空有", "無／空無", "近隣確保"],
+    "selector": "#__BVID__576",
+    "category": "hard_filter"
+  },
+  "building_style": {
+    "johnny_key": "building_style",
+    "reins_label": "建物形式",
+    "type": "checkbox",
+    "values": ["平屋建て"],
+    "selector": "#__BVID__579",
+    "applies_to": "戸建",
+    "category": "hard_filter"
+  },
+
+  "building_age": {
+    "johnny_key": "building_age",
+    "reins_label": "築年月",
+    "type": "range (年 select + 月 select)",
+    "fields": {
+      "from_year": {"selector": "#__BVID__582", "values": "1926年(昭和1年)～2028年(令和10年)"},
+      "from_month": {"selector": "#__BVID__584", "values": "1～12"},
+      "to_year": {"selector": "#__BVID__586", "values": "同上"},
+      "to_month": {"selector": "#__BVID__588", "values": "1～12"}
+    },
+    "category": "hard_filter",
+    "note": "冇直接「築年数」filter，要用築年月 range 計"
+  },
+
+  "free_text": {
+    "johnny_key": "free_text",
+    "fields": {
+      "equipment": {"reins_label": "設備・条件・住宅性能等", "type": "textarea", "selector": "#__BVID__592", "match": "部分一致"},
+      "notes1": {"reins_label": "備考１", "type": "text", "selector": "#__BVID__597", "match": "部分一致"},
+      "neighborhood": {"reins_label": "周辺環境", "type": "text", "selector": "#__BVID__600", "match": "部分一致"}
+    },
+    "category": "hard_filter",
+    "note": "自由文字搜尋，可以用嚟搜「ペット可」「リフォーム済」等關鍵字"
+  },
+
+  "date_filters": {
+    "johnny_key": "date_filters",
+    "fields": {
+      "registered_date": {"reins_label": "登録年月日", "type": "radio + 和暦日期", "period_options": ["指定なし(全期間)", "３日以内", "１週間以内", "１ヶ月以内", "日付を指定"], "selector_prefix": "#__BVID__604"},
+      "changed_date": {"reins_label": "変更年月日", "type": "同上", "selector_prefix": "#__BVID__624"},
+      "sold_date": {"reins_label": "成約年月日", "type": "同上 + １年以内", "selector_prefix": "#__BVID__644", "applies_to": "成約"},
+      "sold_registered_date": {"reins_label": "成約登録年月日", "type": "同上", "selector_prefix": "#__BVID__663", "applies_to": "成約"}
+    },
+    "category": "hard_filter"
+  },
+
+  "_post_filter_available_in_results": {
+    "_note": "以下喺 REINS search result row / overview PDF 有資料，但表單冇直接 filter",
+    "mgmt_fee": "管理費 — result/PDF 有，表單冇",
+    "repair_reserve": "修繕積立金 — PDF 有，表單冇",
+    "total_units": "棟総戸数 — PDF 有，表單冇",
+    "floors_above": "地上階層 — PDF 有，表單冇",
+    "underground_floors": "地下階層 — PDF 有，表單冇",
+    "balcony_sqm": "バルコニー面積 — PDF 有，表單冇",
+    "management_company": "管理会社名 — PDF 有，表單冇",
+    "management_type": "管理形態 — PDF 有，表單冇",
+    "structure": "建物構造 — PDF 有，表單冇",
+    "built_date_display": "築年月（显示用）— result row 有"
+  },
+
+  "_semantic_preference_not_in_reins": [
+    "景觀好 / 開揚",
+    "安靜 / 閑静",
+    "高級感 / ブランド",
+    "適合投資 / 投資向き（利回り計算 Johnny 自己做）",
+    "管理質素好 / 管理が行き届いている",
+    "日当たり良好（方向可以 hard filter，但「採光好」係評價）",
+    "近商業設施 / 生活便利（距離可以搜，但「便利」係評價）",
+    "適合家庭 / 子育て向き"
+  ]
+}

@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="ja" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>全部物件 - Johnny AI</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="/vendor/phosphor/regular.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      fontFamily: { sans: ['Geist', 'system-ui', 'sans-serif'] },
+      colors: {
+        gold:  { DEFAULT: '#e0b97a', light: '#f0d080', dark: '#c9973a', muted: 'rgba(224,185,122,0.12)' },
+        surface:{ DEFAULT: '#0a0a0f', card: '#111118', elevated: '#16161f' },
+        border:{ DEFAULT: '#252538', subtle: '#1e1e30' },
+        muted: '#888', dim: '#555',
+        good: '#4ade80', warn: '#fbbf24', bad: '#f87171', info: '#60a5fa',
+      }
+    }
+  }
+}
+</script>
+<style>
+  * { box-sizing: border-box; }
+  body { background: #0a0a0f; color: #fff; }
+  .glass { background: rgba(17,17,24,0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-bottom: 1px solid #252538; }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: #0a0a0f; }
+  ::-webkit-scrollbar-thumb { background: #252538; border-radius: 2px; }
+  .reveal { opacity: 0; transform: translateY(24px); transition: opacity 0.6s cubic-bezier(0.16,1,0.3,1), transform 0.6s cubic-bezier(0.16,1,0.3,1); }
+  .reveal.visible { opacity: 1; transform: translateY(0); }
+  @media (prefers-reduced-motion: reduce) { .reveal { opacity: 1; transform: none; transition: none; } }
+  .chip { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 9999px; font-size: 11px; font-weight: 500; cursor: pointer; border: 1px solid #252538; background: #111118; color: #888; transition: all 0.15s; white-space: nowrap; user-select: none; }
+  .chip:hover { border-color: #555; color: #ccc; }
+  .chip.active { border-color: #e0b97a; color: #e0b97a; background: rgba(224,185,122,0.08); }
+  .chip-row { display: flex; flex-wrap: nowrap; gap: 6px; overflow-x: auto; padding-bottom: 4px; -webkit-overflow-scrolling: touch; }
+  .chip-row::-webkit-scrollbar { height: 2px; }
+  .chip-row::-webkit-scrollbar-thumb { background: #252538; border-radius: 1px; }
+  .bulk-bar { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 40; background: #16161f; border: 1px solid #e0b97a; border-radius: 9999px; padding: 10px 24px; display: flex; align-items: center; gap: 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.5); }
+  .bulk-bar.hidden { display: none; }
+  .card-check { position: absolute; top: 10px; right: 10px; width: 22px; height: 22px; border-radius: 6px; border: 2px solid #555; background: rgba(0,0,0,0.4); cursor: pointer; z-index: 2; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
+  .card-check.checked { border-color: #e0b97a; background: #e0b97a; }
+  .card-check.checked::after { content: '✓'; color: #000; font-size: 13px; font-weight: 700; }
+  .card-check:hover { border-color: #e0b97a; }
+</style>
+</head>
+<body class="min-h-screen font-sans antialiased">
+
+<header class="sticky top-0 z-50 glass">
+  <div class="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <a href="/" class="flex items-center gap-3 hover:opacity-80 transition-opacity">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="#e0b97a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span class="font-bold text-lg tracking-tight">Johnny AI</span>
+      </a>
+    </div>
+    <div class="flex items-center gap-4">
+      <a href="/" class="text-xs text-dim hover:text-muted transition-colors duration-200">首頁</a>
+      <a href="/listings" class="text-xs font-semibold text-gold px-3 py-1.5 rounded-full border border-gold/30 hover:border-gold hover:bg-gold-muted transition-colors duration-200">全部物件</a>
+      <a href="/collection" class="text-xs text-gold hover:text-gold-light transition-colors duration-200">物件搜尋</a>
+      <a href="/map" class="text-xs text-dim hover:text-muted transition-colors duration-200">地圖</a>
+    </div>
+  </div>
+</header>
+
+<main class="max-w-7xl mx-auto px-4 py-10">
+  <div class="flex items-center justify-between mb-4 reveal">
+    <div>
+      <h1 class="text-3xl font-bold tracking-tight">全部物件</h1>
+      <p class="text-dim text-sm mt-1" id="countLabel">讀取中...</p>
+    </div>
+    <div class="flex items-center gap-3">
+      <select id="sortSelect" class="bg-surface-card border border-border rounded-lg px-3 py-2 text-sm text-white focus:border-gold outline-none">
+        <option value="price_desc">價格高→低</option>
+        <option value="price_asc">價格低→高</option>
+        <option value="area_desc">面積大→小</option>
+        <option value="area_asc">面積小→大</option>
+        <option value="yield_desc">利回高→低</option>
+        <option value="age_asc">築年新→舊</option>
+        <option value="address">地址順</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- Search bar -->
+  <div class="mb-3 reveal">
+    <div class="relative">
+      <i class="ph ph-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-dim"></i>
+      <input id="searchInput" type="text" placeholder="搜尋地址、車站、間取り..." class="w-full bg-surface-card border border-border rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder:text-dim focus:border-gold outline-none transition-colors">
+    </div>
+  </div>
+
+  <!-- Filter chips -->
+  <div class="mb-5 reveal space-y-2">
+    <!-- Price -->
+    <div class="flex items-center gap-2">
+      <span class="text-[10px] text-dim w-10 flex-shrink-0">價格</span>
+      <div class="chip-row flex-1">
+        <span class="chip" data-filter="price" data-val="0-1000">~1000萬</span>
+        <span class="chip" data-filter="price" data-val="1000-5000">1000~5000萬</span>
+        <span class="chip" data-filter="price" data-val="5000-10000">5000萬~1億</span>
+        <span class="chip" data-filter="price" data-val="10000-">1億~</span>
+      </div>
+    </div>
+    <!-- Area -->
+    <div class="flex items-center gap-2">
+      <span class="text-[10px] text-dim w-10 flex-shrink-0">面積</span>
+      <div class="chip-row flex-1">
+        <span class="chip" data-filter="area" data-val="0-30">~30m²</span>
+        <span class="chip" data-filter="area" data-val="30-60">30~60m²</span>
+        <span class="chip" data-filter="area" data-val="60-100">60~100m²</span>
+        <span class="chip" data-filter="area" data-val="100-">100m²~</span>
+      </div>
+    </div>
+    <!-- Type + Source -->
+    <div class="flex items-center gap-2">
+      <span class="text-[10px] text-dim w-10 flex-shrink-0">類型</span>
+      <div class="chip-row flex-1">
+        <span class="chip" data-filter="type" data-val="マンション">マンション</span>
+        <span class="chip" data-filter="type" data-val="戸建て">戸建て</span>
+        <span class="chip" data-filter="type" data-val="土地">土地</span>
+        <span class="chip" style="width:1px"></span>
+        <span class="chip" data-filter="source" data-val="reins">REINS</span>
+        <span class="chip" data-filter="source" data-val="mysok">マイソク</span>
+        <span class="chip" data-filter="source" data-val="upload">仲介上傳</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="listingGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+    <div class="col-span-full text-center text-dim py-20">讀取中...</div>
+  </div>
+</main>
+
+<!-- Bulk action bar -->
+<div id="bulkBar" class="bulk-bar hidden">
+  <span class="text-sm text-gold font-semibold" id="bulkCount">已選 0 件</span>
+  <button onclick="exportCSV()" class="bg-gold hover:bg-gold-dark text-black font-bold px-4 py-1.5 rounded-full text-xs transition-colors">匯出 CSV</button>
+  <button onclick="selectAll()" class="text-xs text-dim hover:text-muted transition-colors" id="selectAllBtn">全選</button>
+  <button onclick="clearSelection()" class="text-xs text-dim hover:text-muted transition-colors">清除</button>
+</div>
+
+<script>
+const API = '/api/listings';
+let allListings = [];
+let selectedIds = new Set();
+let filteredListings = [];
+
+function formatPrice(p) {
+  if (p >= 10000) return (p / 10000).toFixed(1) + '億円';
+  return p.toLocaleString() + '万円';
+}
+
+function sourceBadge(s) {
+  if (s === 'mysok') return 'マイソク';
+  if (s === 'upload') return '仲介上傳';
+  return s;
+}
+
+function sourceLabel(s) {
+  if (s === 'mysok') return 'マイソク';
+  if (s === 'upload') return '仲介上傳';
+  if (s === 'reins') return 'REINS';
+  return s || '上傳';
+}
+
+// ── Filtering ──
+
+function getActiveFilters() {
+  const filters = {};
+  document.querySelectorAll('.chip.active').forEach(chip => {
+    const key = chip.dataset.filter;
+    if (!filters[key]) filters[key] = [];
+    filters[key].push(chip.dataset.val);
+  });
+  return filters;
+}
+
+function parseRange(val) {
+  const parts = val.split('-');
+  if (parts[0] === '') return { min: 0, max: Infinity };
+  if (parts[1] === '') return { min: parseInt(parts[0]), max: Infinity };
+  return { min: parseInt(parts[0]), max: parseInt(parts[1]) };
+}
+
+function matchesFilters(listing) {
+  const filters = getActiveFilters();
+  if (Object.keys(filters).length === 0) return true;
+
+  for (const [key, vals] of Object.entries(filters)) {
+    let match = false;
+    for (const val of vals) {
+      if (key === 'price') {
+        const r = parseRange(val);
+        if (listing.price >= r.min && listing.price < r.max) { match = true; break; }
+      } else if (key === 'area') {
+        const r = parseRange(val);
+        const sqm = listing.size_sqm || 0;
+        if (sqm >= r.min && sqm < r.max) { match = true; break; }
+      } else if (key === 'type') {
+        const t = (listing.type || '').trim();
+        if (t === val) { match = true; break; }
+      } else if (key === 'source') {
+        const s = (listing.source || 'upload').trim();
+        if (s === val) { match = true; break; }
+      }
+    }
+    if (!match) return false;
+  }
+  return true;
+}
+
+function matchesSearch(listing, q) {
+  if (!q) return true;
+  const fields = [listing.address, listing.station, listing.room_layout, listing.structure, listing.type, listing.notes_freetext, listing.ai_generated_copy].filter(Boolean);
+  return fields.some(f => f.toLowerCase().includes(q));
+}
+
+function sortListings(listings, sort) {
+  const sorted = [...listings];
+  if (sort === 'price_desc') sorted.sort((a,b) => (b.price||0) - (a.price||0));
+  else if (sort === 'price_asc') sorted.sort((a,b) => (a.price||0) - (b.price||0));
+  else if (sort === 'area_desc') sorted.sort((a,b) => (b.size_sqm||0) - (a.size_sqm||0));
+  else if (sort === 'area_asc') sorted.sort((a,b) => (a.size_sqm||0) - (b.size_sqm||0));
+  else if (sort === 'yield_desc') sorted.sort((a,b) => (b.yield_surface||0) - (a.yield_surface||0));
+  else if (sort === 'age_asc') sorted.sort((a,b) => (a.age||0) - (b.age||0));
+  else if (sort === 'address') sorted.sort((a,b) => (a.address||'').localeCompare(b.address||'', 'ja'));
+  return sorted;
+}
+
+function applyAll() {
+  const q = (document.getElementById('searchInput').value || '').trim().toLowerCase();
+  const sort = document.getElementById('sortSelect').value;
+
+  filteredListings = allListings.filter(l => matchesSearch(l, q) && matchesFilters(l));
+  filteredListings = sortListings(filteredListings, sort);
+  renderCards(filteredListings);
+}
+
+// ── Render ──
+
+function renderCards(listings) {
+  document.getElementById('countLabel').textContent = `${listings.length} 件物件`;
+  const grid = document.getElementById('listingGrid');
+  if (listings.length === 0) {
+    grid.innerHTML = '<div class="col-span-full text-center text-dim py-20">暫無物件</div>';
+    updateBulkBar();
+    return;
+  }
+  grid.innerHTML = listings.map((l, i) => `
+    <div class="reveal relative bg-surface-card border border-border rounded-2xl overflow-hidden hover:border-gold/50 hover:shadow-lg hover:shadow-gold/5 transition-all duration-300 group" style="transition-delay:${i * 50}ms">
+      <div class="card-check ${selectedIds.has(l.id) ? 'checked' : ''}" onclick="event.preventDefault(); event.stopPropagation(); toggleSelect('${l.id}')"></div>
+      <a href="/listing/${l.id}" class="block">
+        <div class="aspect-[4/3] bg-surface-elevated flex items-center justify-center relative overflow-hidden">
+          ${(() => {
+            // REINS card 主圖優先級：1) drawing_page image (floorplan_images) 2) photos 3) 写真なし
+            const fpImgs = (l.floorplan_images || []).map(f => f.url || f).filter(Boolean);
+            const extPhotos = (l.photos || []).filter(u => typeof u === 'string');
+            const firstImg = fpImgs[0] || extPhotos[0] || '';
+            return firstImg
+              ? `<img src="${firstImg}" alt="" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" onerror="this.parentElement.innerHTML='<i class=\\'ph ph-image text-3xl text-dim\\'></i>'">`
+              : `<i class="ph ph-image text-3xl text-dim"></i>`;
+          })()}
+          <span class="absolute top-3 left-3 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gold/20 text-gold border border-gold/30">${sourceBadge(l.source)}</span>
+          ${(l.yield_surface||0) >= 5.5 ? `<span class="absolute top-3 right-3 text-[10px] font-bold px-2 py-0.5 rounded-full bg-good/20 text-good border border-good/30">高回報</span>` : ''}
+        </div>
+        <div class="p-4">
+          <div class="text-gold font-bold text-lg tracking-tight mb-1">${formatPrice(l.price)}</div>
+          <div class="text-sm text-white leading-snug mb-2 line-clamp-2">${l.address}</div>
+          <div class="flex items-center gap-3 text-xs text-dim mb-2">
+            ${l.station ? `<span><i class="ph ph-train inline mr-1"></i>${l.station} ${l.walk_min ? l.walk_min+'分' : ''}</span>` : ''}
+            ${l.size_sqm ? `<span>${l.size_sqm}m²</span>` : ''}
+            ${l.room_layout ? `<span>${l.room_layout}</span>` : ''}
+          </div>
+          <div class="flex items-center gap-2 text-[10px]">
+            <span class="px-2 py-0.5 rounded-full bg-info/10 text-info">${l.structure||'--'}</span>
+            ${l.age ? `<span class="px-2 py-0.5 rounded-full bg-warn/10 text-warn">築${l.age}年</span>` : ''}
+            <span class="px-2 py-0.5 rounded-full bg-good/10 text-good">${l.yield_surface||0}%</span>
+          </div>
+        </div>
+      </a>
+    </div>
+  `).join('');
+
+  // Reveal animation
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('visible'); observer.unobserve(e.target); } });
+  }, { threshold: 0.1 });
+  document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+
+  updateBulkBar();
+}
+
+// ── Bulk Select ──
+
+function toggleSelect(id) {
+  if (selectedIds.has(id)) selectedIds.delete(id);
+  else selectedIds.add(id);
+  // Update card check visual
+  const card = document.querySelector(`.card-check[onclick*="${id}"]`);
+  if (card) card.classList.toggle('checked', selectedIds.has(id));
+  updateBulkBar();
+}
+
+function selectAll() {
+  const allIds = filteredListings.map(l => l.id);
+  if (selectedIds.size === allIds.length) {
+    selectedIds.clear();
+  } else {
+    allIds.forEach(id => selectedIds.add(id));
+  }
+  renderCards(filteredListings);
+}
+
+function clearSelection() {
+  selectedIds.clear();
+  renderCards(filteredListings);
+}
+
+function updateBulkBar() {
+  const bar = document.getElementById('bulkBar');
+  const count = selectedIds.size;
+  document.getElementById('bulkCount').textContent = `已選 ${count} 件`;
+  if (count > 0) {
+    bar.classList.remove('hidden');
+  } else {
+    bar.classList.add('hidden');
+  }
+  // Update select all button text
+  const allIds = filteredListings.map(l => l.id);
+  document.getElementById('selectAllBtn').textContent = (count === allIds.length && allIds.length > 0) ? '取消全選' : '全選';
+}
+
+// ── CSV Export ──
+
+function exportCSV() {
+  const selected = allListings.filter(l => selectedIds.has(l.id));
+  if (selected.length === 0) return;
+
+  const headers = ['地址', '價格(万円)', '面積(m²)', '間取り', '車站', '步行(分)', '築年数', '表面利回(%)', '來源'];
+  const rows = selected.map(l => [
+    (l.address || '').replace(/,/g, ' '),
+    l.price || 0,
+    l.size_sqm || 0,
+    l.room_layout || '',
+    l.station || '',
+    l.walk_min || 0,
+    l.age || 0,
+    l.yield_surface || 0,
+    sourceLabel(l.source),
+  ]);
+
+  const BOM = '\uFEFF';
+  const csv = BOM + [headers, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `johnny-listings-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ── Init ──
+
+async function load() {
+  try {
+    const r = await fetch(API);
+    const d = await r.json();
+    allListings = d.listings || [];
+    filteredListings = [...allListings];
+    renderCards(filteredListings);
+
+    // Event listeners
+    document.getElementById('searchInput').addEventListener('input', applyAll);
+    document.getElementById('sortSelect').addEventListener('change', applyAll);
+
+    // Chip toggles
+    document.querySelectorAll('.chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        chip.classList.toggle('active');
+        applyAll();
+      });
+    });
+  } catch (err) {
+    document.getElementById('listingGrid').innerHTML = '<div class="col-span-full text-center text-bad py-20">讀取失敗</div>';
+  }
+}
+
+load();
+</script>
+</body>
+</html>

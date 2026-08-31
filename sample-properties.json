@@ -1,0 +1,126 @@
+[
+  {
+    "id": "REINS20260831065622E360",
+    "source": "reins",
+    "title": "アークヒルズ仙石山レジデンス",
+    "prefecture": "東京都",
+    "city": "港区",
+    "ward": "港区",
+    "address": "東京都港区六本木１丁目９－１０",
+    "station": "六本木一丁目",
+    "walkMinutes": 4,
+    "priceYen": 695000000,
+    "managementFeeYen": 55250,
+    "areaSqm": 86.15,
+    "layout": "2ＬＤＫ",
+    "floor": 8,
+    "totalFloors": 47,
+    "builtAt": "平成24年 8月",
+    "direction": "北西",
+    "structure": "ＳＲＣ",
+    "status": "published",
+    "completeness": 1.0,
+    "missingFields": [],
+    "features": [
+      "マンション",
+      "所有権",
+      "空家",
+      "相談",
+      "二住"
+    ],
+    "images": [
+      {
+        "url": "/uploads/reins/100140124320/drawing_page_1.jpg",
+        "type": "floorplan",
+        "order": 1
+      },
+      {
+        "url": "/map?listing=REINS20260831065622E360",
+        "type": "map",
+        "order": 2
+      }
+    ],
+    "updatedAt": "2026-08-31T06:56:22.102126+00:00"
+  },
+  {
+    "id": "REINS202608301151364002",
+    "source": "reins",
+    "title": "ＴＨＥ　ＴＯＹＯＭＩ　ＴＯＷＥＲ　ＭＡＲＩＮＥ＆ＳＫＹ　西ウイング",
+    "prefecture": "東京都",
+    "city": "中央区",
+    "ward": "中央区",
+    "address": "東京都中央区豊海町",
+    "station": "勝どき",
+    "walkMinutes": 10,
+    "priceYen": 318000000,
+    "managementFeeYen": 36120,
+    "areaSqm": 89.84,
+    "layout": "3ＬＤＫ",
+    "floor": 23,
+    "totalFloors": 54,
+    "builtAt": "令和 8年11月",
+    "direction": "西",
+    "structure": "ＲＣ",
+    "status": "published",
+    "completeness": 1.0,
+    "missingFields": [],
+    "features": [
+      "マンション",
+      "所有権",
+      "未完成",
+      "相談",
+      "準工"
+    ],
+    "images": [
+      {
+        "url": "/uploads/reins/100140495118/drawing_page_1.jpg",
+        "type": "floorplan",
+        "order": 1
+      },
+      {
+        "url": "/map?listing=REINS202608301151364002",
+        "type": "map",
+        "order": 2
+      }
+    ],
+    "updatedAt": "2026-08-30T11:51:36.168253+00:00"
+  },
+  {
+    "id": "REINS20260830115101289B",
+    "source": "reins",
+    "title": "ザ・パークハウス晴海タワーズティアロレジデンス",
+    "prefecture": "東京都",
+    "city": "中央区",
+    "ward": "中央区",
+    "address": "東京都中央区晴海２丁目",
+    "station": "月島",
+    "walkMinutes": 13,
+    "priceYen": 180000000,
+    "managementFeeYen": 26190,
+    "areaSqm": 81.89,
+    "layout": "3ＬＤＫ",
+    "floor": 41,
+    "totalFloors": 49,
+    "builtAt": "平成28年 3月",
+    "direction": "南",
+    "structure": "ＲＣ",
+    "status": "published",
+    "completeness": 1.0,
+    "missingFields": [],
+    "features": [
+      "マンション",
+      "所有権",
+      "居住中",
+      "相談",
+      "準工"
+    ],
+    "images": [
+      {
+        "url": "/map?listing=REINS20260830115101289B",
+        "type": "map",
+        "order": 1
+      }
+    ],
+    "updatedAt": "2026-08-30T11:51:01.710394+00:00"
+  }
+]

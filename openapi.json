@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "gift22.vip Property Review API",
-    "version": "0.1.0",
-    "description": "Proposed versioned API contract for an external frontend to read and review existing property data. This spec is derived from the current Flask/SQLite implementation and describes endpoints that still need to be added under /api/v1."
+    "version": "0.2.0",
+    "description": "Implemented versioned API contract for the private property workbench. All /api/v1 endpoints require HTTP Basic authentication configured by WORKBENCH_USER and WORKBENCH_PASSWORD."
   },
   "servers": [
     {
@@ -32,39 +32,53 @@
   "paths": {
     "/api/v1/properties": {
       "get": {
-        "tags": ["Properties"],
+        "tags": [
+          "Properties"
+        ],
         "summary": "List properties",
-        "description": "Return paginated standardized property records. This endpoint does not exist yet in the current backend; it should wrap the existing listings table and normalize fields for an external frontend.",
+        "description": "Return paginated standardized property records backed by the existing listings table.",
         "parameters": [
           {
             "name": "q",
             "in": "query",
             "description": "Free-text search over title, address, station, layout, structure, features, and source-specific identifiers.",
-            "schema": { "type": "string" }
+            "schema": {
+              "type": "string"
+            }
           },
           {
             "name": "area",
             "in": "query",
             "description": "Area filter. Recommended values: prefecture/city/ward text such as 東京都, 港区, 中央区.",
-            "schema": { "type": "string" }
+            "schema": {
+              "type": "string"
+            }
           },
           {
             "name": "min_price",
             "in": "query",
             "description": "Minimum property price in JPY.",
-            "schema": { "type": "integer", "minimum": 0 }
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
           },
           {
             "name": "max_price",
             "in": "query",
             "description": "Maximum property price in JPY.",
-            "schema": { "type": "integer", "minimum": 0 }
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
           },
           {
             "name": "layout",
             "in": "query",
             "description": "Layout filter, e.g. 1LDK, 2LDK, 3ＬＤＫ. Should match normalized or raw layout text.",
-            "schema": { "type": "string" }
+            "schema": {
+              "type": "string"
+            }
           },
           {
             "name": "status",
@@ -72,14 +86,23 @@
             "description": "Review/publication status.",
             "schema": {
               "type": "string",
-              "enum": ["draft", "published", "archived", "all"]
+              "enum": [
+                "draft",
+                "published",
+                "archived",
+                "all"
+              ]
             }
           },
           {
             "name": "min_completeness",
             "in": "query",
             "description": "Minimum computed completeness score, from 0 to 1.",
-            "schema": { "type": "number", "minimum": 0, "maximum": 1 }
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
           },
           {
             "name": "source",
@@ -87,7 +110,14 @@
             "description": "Source system for the property.",
             "schema": {
               "type": "string",
-              "enum": ["reins", "suumo", "upload", "mysok", "sample", "all"]
+              "enum": [
+                "reins",
+                "suumo",
+                "upload",
+                "mysok",
+                "sample",
+                "all"
+              ]
             }
           },
           {
@@ -96,19 +126,37 @@
             "description": "Sort order.",
             "schema": {
               "type": "string",
-              "enum": ["updated_desc", "updated_asc", "price_desc", "price_asc", "area_desc", "area_asc", "completeness_desc", "completeness_asc"],
+              "enum": [
+                "updated_desc",
+                "updated_asc",
+                "price_desc",
+                "price_asc",
+                "area_desc",
+                "area_asc",
+                "completeness_desc",
+                "completeness_asc"
+              ],
               "default": "updated_desc"
             }
           },
           {
             "name": "page",
             "in": "query",
-            "schema": { "type": "integer", "minimum": 1, "default": 1 }
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
           },
           {
             "name": "page_size",
             "in": "query",
-            "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 }
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
           }
         ],
         "responses": {
@@ -116,18 +164,26 @@
             "description": "Paginated properties",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/PropertyListResponse" }
+                "schema": {
+                  "$ref": "#/components/schemas/PropertyListResponse"
+                }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "401": { "$ref": "#/components/responses/Unauthorized" }
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
         }
       }
     },
     "/api/v1/properties/{id}": {
       "get": {
-        "tags": ["Properties"],
+        "tags": [
+          "Properties"
+        ],
         "summary": "Get one property",
         "description": "Return one standardized property record by internal listing id.",
         "parameters": [
@@ -135,7 +191,9 @@
             "name": "id",
             "in": "path",
             "required": true,
-            "schema": { "type": "string" }
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -143,18 +201,26 @@
             "description": "Property detail",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Property" }
+                "schema": {
+                  "$ref": "#/components/schemas/Property"
+                }
               }
             }
           },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       }
     },
     "/api/v1/property-stats": {
       "get": {
-        "tags": ["Stats"],
+        "tags": [
+          "Stats"
+        ],
         "summary": "Get property statistics",
         "description": "Return inventory counts for dashboard/review UI.",
         "responses": {
@@ -162,43 +228,51 @@
             "description": "Property stats",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/PropertyStats" }
+                "schema": {
+                  "$ref": "#/components/schemas/PropertyStats"
+                }
               }
             }
           },
-          "401": { "$ref": "#/components/responses/Unauthorized" }
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
         }
       }
     },
     "/api/v1/properties/{id}/review": {
       "patch": {
-        "tags": ["Review"],
+        "tags": [
+          "Review"
+        ],
         "summary": "Review a property",
-        "description": "Update review status for a property. This should be non-destructive; use archived/rejected status instead of DELETE for rejection. Current backend only has POST /api/confirm/{id} for draft→published, so this is a recommended new endpoint.",
+        "description": "Apply an explicit user review action. publish reuses the existing guarded confirmation flow; archive/reject are non-destructive; draft restores the review state.",
         "parameters": [
           {
             "name": "id",
             "in": "path",
             "required": true,
-            "schema": { "type": "string" }
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/ReviewRequest" },
+              "schema": {
+                "$ref": "#/components/schemas/ReviewRequest"
+              },
               "examples": {
                 "publish": {
                   "value": {
-                    "action": "publish",
-                    "reviewNote": "Checked price, area, and images."
+                    "action": "publish"
                   }
                 },
                 "archive": {
                   "value": {
-                    "action": "archive",
-                    "reviewNote": "Duplicate or not suitable for publication."
+                    "action": "archive"
                   }
                 }
               }
@@ -212,28 +286,42 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": ["code", "property"],
+                  "required": [
+                    "code",
+                    "property"
+                  ],
                   "properties": {
-                    "code": { "type": "integer", "const": 1 },
-                    "property": { "$ref": "#/components/schemas/Property" }
+                    "code": {
+                      "type": "integer",
+                      "const": 1
+                    },
+                    "property": {
+                      "$ref": "#/components/schemas/Property"
+                    }
                   }
                 }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       }
     }
   },
   "components": {
     "securitySchemes": {
-      "BearerAuth": {
+      "BasicAuth": {
         "type": "http",
-        "scheme": "bearer",
-        "bearerFormat": "opaque"
+        "scheme": "basic",
+        "description": "Private workbench credentials configured on the server; credentials must never be committed."
       }
     },
     "responses": {
@@ -241,7 +329,9 @@
         "description": "Bad request",
         "content": {
           "application/json": {
-            "schema": { "$ref": "#/components/schemas/Error" }
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
           }
         }
       },
@@ -249,7 +339,9 @@
         "description": "Missing or invalid API credential",
         "content": {
           "application/json": {
-            "schema": { "$ref": "#/components/schemas/Error" }
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
           }
         }
       },
@@ -257,7 +349,9 @@
         "description": "Property not found",
         "content": {
           "application/json": {
-            "schema": { "$ref": "#/components/schemas/Error" }
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
           }
         }
       }
@@ -265,114 +359,303 @@
     "schemas": {
       "PropertyListResponse": {
         "type": "object",
-        "required": ["items", "page", "pageSize", "total"],
+        "required": [
+          "items",
+          "page",
+          "pageSize",
+          "total"
+        ],
         "properties": {
           "items": {
             "type": "array",
-            "items": { "$ref": "#/components/schemas/Property" }
+            "items": {
+              "$ref": "#/components/schemas/Property"
+            }
           },
-          "page": { "type": "integer", "minimum": 1 },
-          "pageSize": { "type": "integer", "minimum": 1 },
-          "total": { "type": "integer", "minimum": 0 },
-          "totalPages": { "type": "integer", "minimum": 0 },
-          "filters": { "type": "object", "additionalProperties": true }
+          "page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "totalPages": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "filters": {
+            "type": "object",
+            "additionalProperties": true
+          }
         }
       },
       "Property": {
         "type": "object",
         "required": [
-          "id", "source", "title", "prefecture", "city", "ward", "address",
-          "station", "walkMinutes", "priceYen", "managementFeeYen", "areaSqm",
-          "layout", "floor", "totalFloors", "builtAt", "direction", "structure",
-          "status", "completeness", "missingFields", "features", "images", "updatedAt"
+          "id",
+          "source",
+          "title",
+          "prefecture",
+          "city",
+          "ward",
+          "address",
+          "station",
+          "walkMinutes",
+          "priceYen",
+          "managementFeeYen",
+          "areaSqm",
+          "layout",
+          "floor",
+          "totalFloors",
+          "builtAt",
+          "direction",
+          "structure",
+          "status",
+          "completeness",
+          "missingFields",
+          "features",
+          "images",
+          "updatedAt"
         ],
         "properties": {
-          "id": { "type": "string" },
-          "source": { "type": "string", "examples": ["reins", "suumo", "upload", "mysok"] },
-          "title": { "type": "string" },
-          "prefecture": { "type": "string" },
-          "city": { "type": "string" },
-          "ward": { "type": "string" },
-          "address": { "type": "string" },
-          "station": { "type": "string" },
-          "walkMinutes": { "type": "integer", "minimum": 0 },
-          "priceYen": { "type": "integer", "minimum": 0 },
-          "managementFeeYen": { "type": ["integer", "null"], "minimum": 0 },
-          "areaSqm": { "type": "number", "minimum": 0 },
-          "layout": { "type": "string" },
-          "floor": { "type": ["integer", "null"] },
-          "totalFloors": { "type": ["integer", "null"] },
-          "builtAt": { "type": "string" },
-          "direction": { "type": "string" },
-          "structure": { "type": "string" },
-          "status": { "type": "string", "enum": ["draft", "published", "archived", "lead"] },
-          "completeness": { "type": "number", "minimum": 0, "maximum": 1 },
-          "missingFields": { "type": "array", "items": { "type": "string" } },
-          "features": { "type": "array", "items": { "type": "string" } },
-          "images": { "type": "array", "items": { "$ref": "#/components/schemas/PropertyImage" } },
-          "updatedAt": { "type": "string", "format": "date-time" }
+          "id": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "examples": [
+              "reins",
+              "suumo",
+              "upload",
+              "mysok"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "prefecture": {
+            "type": "string"
+          },
+          "city": {
+            "type": "string"
+          },
+          "ward": {
+            "type": "string"
+          },
+          "address": {
+            "type": "string"
+          },
+          "station": {
+            "type": "string"
+          },
+          "walkMinutes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "priceYen": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "managementFeeYen": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "areaSqm": {
+            "type": "number",
+            "minimum": 0
+          },
+          "layout": {
+            "type": "string"
+          },
+          "floor": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "totalFloors": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "builtAt": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "string"
+          },
+          "structure": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "published",
+              "archived",
+              "lead"
+            ]
+          },
+          "completeness": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "missingFields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "features": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "images": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PropertyImage"
+            }
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       },
       "PropertyImage": {
         "type": "object",
-        "required": ["url", "type", "order"],
+        "required": [
+          "url",
+          "type",
+          "order"
+        ],
         "properties": {
-          "url": { "type": "string" },
-          "type": { "type": "string", "enum": ["exterior", "interior", "floorplan", "map"] },
-          "order": { "type": "integer", "minimum": 1 }
+          "url": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "exterior",
+              "interior",
+              "floorplan",
+              "map"
+            ]
+          },
+          "order": {
+            "type": "integer",
+            "minimum": 1
+          }
         }
       },
       "PropertyStats": {
         "type": "object",
-        "required": ["total", "byStatus", "bySource"],
+        "required": [
+          "total",
+          "byStatus",
+          "bySource"
+        ],
         "properties": {
-          "total": { "type": "integer", "minimum": 0 },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
           "byStatus": {
             "type": "object",
             "properties": {
-              "draft": { "type": "integer", "minimum": 0 },
-              "published": { "type": "integer", "minimum": 0 },
-              "archived": { "type": "integer", "minimum": 0 },
-              "lead": { "type": "integer", "minimum": 0 }
+              "draft": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "published": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "archived": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "lead": {
+                "type": "integer",
+                "minimum": 0
+              }
             },
-            "additionalProperties": { "type": "integer", "minimum": 0 }
+            "additionalProperties": {
+              "type": "integer",
+              "minimum": 0
+            }
           },
           "bySource": {
             "type": "object",
-            "additionalProperties": { "type": "integer", "minimum": 0 }
+            "additionalProperties": {
+              "type": "integer",
+              "minimum": 0
+            }
           },
-          "averageCompleteness": { "type": "number", "minimum": 0, "maximum": 1 },
-          "needsReview": { "type": "integer", "minimum": 0 }
+          "averageCompleteness": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "needsReview": {
+            "type": "integer",
+            "minimum": 0
+          }
         }
       },
       "ReviewRequest": {
         "type": "object",
-        "required": ["action"],
+        "required": [
+          "action"
+        ],
         "properties": {
           "action": {
             "type": "string",
-            "enum": ["publish", "archive", "reject", "draft"]
-          },
-          "status": {
-            "type": "string",
-            "enum": ["draft", "published", "archived"]
-          },
-          "reviewNote": { "type": "string" },
-          "reviewer": { "type": "string" }
+            "enum": [
+              "publish",
+              "archive",
+              "reject",
+              "draft"
+            ]
+          }
         },
         "additionalProperties": false
       },
       "Error": {
         "type": "object",
-        "required": ["code", "error"],
+        "required": [
+          "code",
+          "error"
+        ],
         "properties": {
-          "code": { "type": "integer", "examples": [0] },
-          "error": { "type": "string" }
+          "code": {
+            "type": "integer",
+            "examples": [
+              0
+            ]
+          },
+          "error": {
+            "type": "string"
+          }
         }
       }
     }
   },
   "security": [
-    { "BearerAuth": [] }
+    {
+      "BasicAuth": []
+    }
   ]
 }

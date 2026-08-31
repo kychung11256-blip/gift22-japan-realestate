@@ -3,9 +3,10 @@ Flask backend for Johnny AI Platform.
 JSON API: search, detail, upload, confirm, dashboard stats.
 """
 
-import os, sys, json, uuid, random, threading, time, urllib.request, gzip as _gzip_mod
+import os, sys, json, uuid, random, threading, time, urllib.request, gzip as _gzip_mod, hmac
 from datetime import datetime, timezone
-from flask import Flask, jsonify, request, send_from_directory
+from functools import wraps
+from flask import Flask, jsonify, request, send_from_directory, Response
 
 # Load .env file manually if present
 env_path = os.path.join(os.path.dirname(__file__), '.env')
@@ -31,9 +32,35 @@ sys.path.insert(0, os.path.dirname(__file__))
 from db import get_db, init_db
 from suumo_scraper import scrape_and_insert
 from suumo_search import search as suumo_search, scrape_detail, import_to_db
+from workbench_api import filter_properties, property_stats, sort_properties, standardize_property
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB
+
+
+def _workbench_auth_required(view):
+    """Fail-closed HTTP Basic protection for the private workbench and v1 API."""
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        expected_user = os.environ.get('WORKBENCH_USER', 'johnny')
+        expected_password = os.environ.get('WORKBENCH_PASSWORD', '')
+        if not expected_password:
+            return Response('Property workbench is not configured.', status=503)
+
+        auth = request.authorization
+        valid = bool(
+            auth
+            and hmac.compare_digest(auth.username or '', expected_user)
+            and hmac.compare_digest(auth.password or '', expected_password)
+        )
+        if not valid:
+            return Response(
+                'Authentication required.',
+                status=401,
+                headers={'WWW-Authenticate': 'Basic realm="Gift22 Property Workbench"'},
+            )
+        return view(*args, **kwargs)
+    return wrapped
 
 # ── Inject venv via WSGI on startup ──
 # (Not needed when running via .venv/bin/python directly)
@@ -66,6 +93,11 @@ def collection_page():
 @app.route('/listings')
 def listings_page():
     return send_from_directory('.', 'listings.html')
+
+@app.route('/workbench')
+@_workbench_auth_required
+def workbench_page():
+    return send_from_directory('.', 'workbench.html')
 
 # ── Agent Platform Proxy ────────────────────────────────────────
 import urllib.request as _urllib_req
@@ -116,7 +148,15 @@ def agent_proxy(subpath):
 
 @app.route('/<path:filename>')
 def static_files(filename):
-    if os.path.isfile(os.path.join(os.path.dirname(__file__), filename)):
+    # Explicit allowlist prevents source, .env and runtime files from being
+    # exposed through this catch-all route. workbench.html is intentionally
+    # excluded; it is only served by the authenticated /workbench route.
+    public_files = {
+        'index.html', 'upload.html', 'review.html', 'mysok_import.html',
+        'map.html', 'collection.html', 'listings.html', 'listing.html',
+    }
+    public_prefixes = ('vendor/', 'config/', 'uploads/reins/', 'uploads/thumbs/')
+    if filename in public_files or filename.startswith(public_prefixes):
         return send_from_directory('.', filename)
     return jsonify({'error': 'not found'}), 404
 
@@ -533,6 +573,120 @@ def listing_detail(listing_id):
     if not row:
         return jsonify({'error': 'not found'}), 404
     return jsonify(_row_to_dict(row))
+
+
+# ── Private Property Workbench API v1 ──
+def _v1_all_properties():
+    conn = get_db()
+    rows = conn.execute("SELECT * FROM listings").fetchall()
+    conn.close()
+    return [standardize_property(_row_to_dict(row)) for row in rows]
+
+
+@app.route('/api/v1/properties')
+@_workbench_auth_required
+def v1_properties():
+    try:
+        page = max(1, int(request.args.get('page', 1)))
+        page_size = min(100, max(1, int(request.args.get('page_size', 20))))
+        min_price = max(0, int(request.args.get('min_price', 0) or 0))
+        max_price = max(0, int(request.args.get('max_price', 0) or 0))
+        min_completeness = float(request.args.get('min_completeness', 0) or 0)
+    except (TypeError, ValueError):
+        return jsonify({'code': 0, 'error': 'Invalid numeric query parameter'}), 400
+    if not 0 <= min_completeness <= 1:
+        return jsonify({'code': 0, 'error': 'min_completeness must be between 0 and 1'}), 400
+
+    filters = {
+        'q': request.args.get('q', '').strip(),
+        'area': request.args.get('area', '').strip(),
+        'min_price': min_price,
+        'max_price': max_price,
+        'layout': request.args.get('layout', '').strip(),
+        'status': request.args.get('status', 'all').strip().lower(),
+        'min_completeness': min_completeness,
+        'source': request.args.get('source', 'all').strip().lower(),
+        'sort': request.args.get('sort', 'updated_desc').strip().lower(),
+    }
+    if filters['status'] not in {'all', 'draft', 'published', 'archived', 'lead'}:
+        return jsonify({'code': 0, 'error': 'Invalid status'}), 400
+    if filters['source'] not in {'all', 'reins', 'suumo', 'upload', 'mysok', 'sample'}:
+        return jsonify({'code': 0, 'error': 'Invalid source'}), 400
+
+    items = filter_properties(
+        _v1_all_properties(),
+        q=filters['q'],
+        area=filters['area'],
+        min_price=filters['min_price'],
+        max_price=filters['max_price'],
+        layout=filters['layout'],
+        status=filters['status'],
+        min_completeness=filters['min_completeness'],
+        source=filters['source'],
+    )
+    items = sort_properties(items, filters['sort'])
+    total = len(items)
+    start = (page - 1) * page_size
+    pages = (total + page_size - 1) // page_size if total else 0
+    return jsonify({
+        'items': items[start:start + page_size],
+        'page': page,
+        'pageSize': page_size,
+        'total': total,
+        'totalPages': pages,
+        'filters': filters,
+    })
+
+
+@app.route('/api/v1/properties/<listing_id>')
+@_workbench_auth_required
+def v1_property_detail(listing_id):
+    conn = get_db()
+    row = conn.execute("SELECT * FROM listings WHERE id = ?", (listing_id,)).fetchone()
+    conn.close()
+    if not row:
+        return jsonify({'code': 0, 'error': 'Property not found'}), 404
+    return jsonify(standardize_property(_row_to_dict(row)))
+
+
+@app.route('/api/v1/property-stats')
+@_workbench_auth_required
+def v1_property_stats():
+    return jsonify(property_stats(_v1_all_properties()))
+
+
+@app.route('/api/v1/properties/<listing_id>/review', methods=['PATCH'])
+@_workbench_auth_required
+def v1_property_review(listing_id):
+    data = request.get_json(silent=True) or {}
+    action = str(data.get('action') or '').strip().lower()
+    if action not in {'publish', 'archive', 'reject', 'draft'}:
+        return jsonify({'code': 0, 'error': 'Invalid review action'}), 400
+
+    conn = get_db()
+    row = conn.execute("SELECT * FROM listings WHERE id = ?", (listing_id,)).fetchone()
+    conn.close()
+    if not row:
+        return jsonify({'code': 0, 'error': 'Property not found'}), 404
+
+    if action == 'publish':
+        legacy_response = app.make_response(confirm_listing(listing_id))
+        if legacy_response.status_code >= 400:
+            return legacy_response
+    else:
+        target_status = 'archived' if action in {'archive', 'reject'} else 'draft'
+        conn = get_db()
+        conn.execute(
+            "UPDATE listings SET status=?, updated_at=? WHERE id=?",
+            (target_status, datetime.now(timezone.utc).isoformat(), listing_id),
+        )
+        conn.commit()
+        conn.close()
+
+    conn = get_db()
+    updated = conn.execute("SELECT * FROM listings WHERE id = ?", (listing_id,)).fetchone()
+    conn.close()
+    return jsonify({'code': 1, 'property': standardize_property(_row_to_dict(updated))})
 
 @app.route('/api/listing/<listing_id>', methods=['DELETE'])
 def delete_listing(listing_id):

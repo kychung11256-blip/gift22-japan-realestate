@@ -192,7 +192,8 @@ def parse_overview_pdf(path):
     floors_above_raw = _right_value(spans, '地上階層')
     total_units_raw = _left_value(spans, '棟総戸数')
     underground_raw = _right_value(spans, '地下階層')
-    orientation = _left_value(spans, 'バルコニー方向') or infer_orientation_from_text(page_text)
+    orientation_field = _left_value(spans, 'バルコニー方向')
+    orientation = orientation_field or infer_orientation_from_text(page_text)
     balcony_raw = _right_value(spans, 'バルコニー面積')
 
     # --- schema 相容欄位（舊 parse_overview_pdf 有回傳嘅） ---
@@ -251,6 +252,8 @@ def parse_overview_pdf(path):
         'floors_above': _to_int(_strip_unit(floors_above_raw, ['階'])),
         'underground_floors': _to_int(_strip_unit(underground_raw, ['階'])),
         'orientation': orientation,
+        'orientation_source': 'overview_field' if orientation_field else ('overview_text' if orientation else ''),
+        'orientation_confidence': 1.0 if orientation_field else (0.9 if orientation else 0.0),
         'balcony_sqm': _to_float(_strip_unit(balcony_raw, ['㎡'])),
         'total_units': _to_int(_strip_unit(total_units_raw, ['戸'])),
         'land_rights': land_rights,

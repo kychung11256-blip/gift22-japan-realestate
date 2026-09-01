@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" class="dark">
+<html lang="ja">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -15,11 +15,11 @@ tailwind.config = {
     extend: {
       fontFamily: { sans: ['Geist', 'system-ui', 'sans-serif'] },
       colors: {
-        gold:  { DEFAULT: '#e0b97a', light: '#f0d080', dark: '#c9973a', muted: 'rgba(224,185,122,0.12)' },
-        surface:{ DEFAULT: '#0a0a0f', card: '#111118', elevated: '#16161f' },
-        border:{ DEFAULT: '#252538', subtle: '#1e1e30' },
-        muted: '#888', dim: '#555',
-        good: '#4ade80', warn: '#fbbf24', bad: '#f87171', info: '#60a5fa',
+        gold:  { DEFAULT: '#164d3d', light: '#23755b', dark: '#0f3f32', muted: 'rgba(22,77,61,0.12)' },
+        surface:{ DEFAULT: '#f4f6f3', card: '#ffffff', elevated: '#edf1ee' },
+        border:{ DEFAULT: '#dfe7e3', subtle: '#e8eeeb' },
+        muted: '#68776f', dim: '#7c8984',
+        good: '#36a77b', warn: '#c88a38', bad: '#a9573c', info: '#4f7c70',
       }
     }
   }
@@ -27,27 +27,28 @@ tailwind.config = {
 </script>
 <style>
   * { box-sizing: border-box; }
-  body { background: #0a0a0f; color: #fff; }
-  .glass { background: rgba(17,17,24,0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-bottom: 1px solid #252538; }
+  body { background: #f4f6f3; color: #fff; }
+  .glass { background: rgba(17,17,24,0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-bottom: 1px solid #dfe7e3; }
   ::-webkit-scrollbar { width: 4px; }
-  ::-webkit-scrollbar-track { background: #0a0a0f; }
-  ::-webkit-scrollbar-thumb { background: #252538; border-radius: 2px; }
+  ::-webkit-scrollbar-track { background: #f4f6f3; }
+  ::-webkit-scrollbar-thumb { background: #dfe7e3; border-radius: 2px; }
   .reveal { opacity: 0; transform: translateY(24px); transition: opacity 0.6s cubic-bezier(0.16,1,0.3,1), transform 0.6s cubic-bezier(0.16,1,0.3,1); }
   .reveal.visible { opacity: 1; transform: translateY(0); }
   @media (prefers-reduced-motion: reduce) { .reveal { opacity: 1; transform: none; transition: none; } }
-  .chip { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 9999px; font-size: 11px; font-weight: 500; cursor: pointer; border: 1px solid #252538; background: #111118; color: #888; transition: all 0.15s; white-space: nowrap; user-select: none; }
-  .chip:hover { border-color: #555; color: #ccc; }
-  .chip.active { border-color: #e0b97a; color: #e0b97a; background: rgba(224,185,122,0.08); }
+  .chip { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 9999px; font-size: 11px; font-weight: 500; cursor: pointer; border: 1px solid #dfe7e3; background: #ffffff; color: #68776f; transition: all 0.15s; white-space: nowrap; user-select: none; }
+  .chip:hover { border-color: #7c8984; color: #ccc; }
+  .chip.active { border-color: #164d3d; color: #164d3d; background: rgba(22,77,61,0.08); }
   .chip-row { display: flex; flex-wrap: nowrap; gap: 6px; overflow-x: auto; padding-bottom: 4px; -webkit-overflow-scrolling: touch; }
   .chip-row::-webkit-scrollbar { height: 2px; }
-  .chip-row::-webkit-scrollbar-thumb { background: #252538; border-radius: 1px; }
-  .bulk-bar { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 40; background: #16161f; border: 1px solid #e0b97a; border-radius: 9999px; padding: 10px 24px; display: flex; align-items: center; gap: 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.5); }
+  .chip-row::-webkit-scrollbar-thumb { background: #dfe7e3; border-radius: 1px; }
+  .bulk-bar { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 40; background: #edf1ee; border: 1px solid #164d3d; border-radius: 9999px; padding: 10px 24px; display: flex; align-items: center; gap: 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.5); }
   .bulk-bar.hidden { display: none; }
-  .card-check { position: absolute; top: 10px; right: 10px; width: 22px; height: 22px; border-radius: 6px; border: 2px solid #555; background: rgba(0,0,0,0.4); cursor: pointer; z-index: 2; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
-  .card-check.checked { border-color: #e0b97a; background: #e0b97a; }
+  .card-check { position: absolute; top: 10px; right: 10px; width: 22px; height: 22px; border-radius: 6px; border: 2px solid #7c8984; background: rgba(0,0,0,0.4); cursor: pointer; z-index: 2; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
+  .card-check.checked { border-color: #164d3d; background: #164d3d; }
   .card-check.checked::after { content: '✓'; color: #000; font-size: 13px; font-weight: 700; }
-  .card-check:hover { border-color: #e0b97a; }
+  .card-check:hover { border-color: #164d3d; }
 </style>
+<link rel="stylesheet" href="/vendor/workbench-theme.css">
 </head>
 <body class="min-h-screen font-sans antialiased">
 
@@ -55,7 +56,7 @@ tailwind.config = {
   <div class="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
     <div class="flex items-center gap-3">
       <a href="/" class="flex items-center gap-3 hover:opacity-80 transition-opacity">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="#e0b97a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="#164d3d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <span class="font-bold text-lg tracking-tight">Johnny AI</span>
       </a>
     </div>

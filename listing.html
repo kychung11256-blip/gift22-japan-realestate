@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" class="dark">
+<html lang="ja">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -14,10 +14,10 @@ tailwind.config = {
     extend: {
       fontFamily: { sans: ['Geist', 'system-ui', 'sans-serif'] },
       colors: {
-        gold:  { DEFAULT: '#e0b97a', light: '#f0d080', dark: '#c9973a', muted: 'rgba(224,185,122,0.12)' },
-        surface:{ DEFAULT: '#0a0a0f', card: '#111118', elevated: '#16161f' },
-        border:{ DEFAULT: '#252538', subtle: '#1e1e30' },
-        muted: '#888', dim: '#555', good: '#4ade80', warn: '#fbbf24', bad: '#f87171', info: '#60a5fa',
+        gold:  { DEFAULT: '#164d3d', light: '#23755b', dark: '#0f3f32', muted: 'rgba(22,77,61,0.12)' },
+        surface:{ DEFAULT: '#f4f6f3', card: '#ffffff', elevated: '#edf1ee' },
+        border:{ DEFAULT: '#dfe7e3', subtle: '#e8eeeb' },
+        muted: '#68776f', dim: '#7c8984', good: '#36a77b', warn: '#c88a38', bad: '#a9573c', info: '#4f7c70',
       }
     }
   }
@@ -25,21 +25,21 @@ tailwind.config = {
 </script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: #0a0a0f; color: #fff; }
+  body { background: #f4f6f3; color: #fff; }
   ::-webkit-scrollbar { width: 4px; }
-  ::-webkit-scrollbar-track { background: #0a0a0f; }
-  ::-webkit-scrollbar-thumb { background: #252538; border-radius: 2px; }
+  ::-webkit-scrollbar-track { background: #f4f6f3; }
+  ::-webkit-scrollbar-thumb { background: #dfe7e3; border-radius: 2px; }
 
   /* Photo gallery */
-  .gallery-main { position: relative; overflow: hidden; border-radius: 16px; background: #111118; }
-  .gallery-main img { width: 100%; height: 420px; object-fit: contain; cursor: pointer; transition: opacity 0.3s; background: #0a0a0f; }
+  .gallery-main { position: relative; overflow: hidden; border-radius: 16px; background: #ffffff; }
+  .gallery-main img { width: 100%; height: 420px; object-fit: contain; cursor: pointer; transition: opacity 0.3s; background: #f4f6f3; }
   .gallery-nav { position: absolute; top: 50%; transform: translateY(-50%); width: 40px; height: 40px; border-radius: 50%; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.15); color: #fff; font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; z-index: 2; }
   .gallery-nav:hover { background: rgba(0,0,0,0.8); }
   .gallery-prev { left: 12px; }
   .gallery-next { right: 12px; }
   .gallery-thumbs { display: flex; gap: 8px; overflow-x: auto; padding: 12px 0; }
   .gallery-thumbs img { width: 88px; height: 60px; object-fit: cover; border-radius: 8px; cursor: pointer; border: 2px solid transparent; opacity: 0.5; transition: all 0.2s; flex-shrink: 0; }
-  .gallery-thumbs img.active { border-color: #e0b97a; opacity: 1; }
+  .gallery-thumbs img.active { border-color: #164d3d; opacity: 1; }
   .gallery-thumbs img:hover { opacity: 0.8; }
   .gallery-counter { position: absolute; bottom: 16px; right: 16px; background: rgba(0,0,0,0.6); color: #fff; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 500; z-index: 2; }
 
@@ -53,13 +53,14 @@ tailwind.config = {
   .lb-nav:hover { background: rgba(255,255,255,0.2); }
   .lb-prev { left: 20px; }
   .lb-next { right: 20px; }
-  .lb-counter { position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); color: #888; font-size: 13px; z-index: 2; }
+  .lb-counter { position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); color: #68776f; font-size: 13px; z-index: 2; }
 
   /* Detail table */
   .detail-table { width: 100%; border-collapse: collapse; }
-  .detail-table th { text-align: left; padding: 12px 16px; font-size: 13px; color: #888; font-weight: 500; width: 200px; min-width: 200px; vertical-align: top; border-bottom: 1px solid #1e1e30; background: #111118; }
-  .detail-table td { padding: 12px 16px; font-size: 14px; font-weight: 600; border-bottom: 1px solid #1e1e30; white-space: normal; word-break: break-word; overflow-wrap: anywhere; line-height: 1.55; vertical-align: top; }
+  .detail-table th { text-align: left; padding: 12px 16px; font-size: 13px; color: #68776f; font-weight: 500; width: 200px; min-width: 200px; vertical-align: top; border-bottom: 1px solid #e8eeeb; background: #ffffff; }
+  .detail-table td { padding: 12px 16px; font-size: 14px; font-weight: 600; border-bottom: 1px solid #e8eeeb; white-space: normal; word-break: break-word; overflow-wrap: anywhere; line-height: 1.55; vertical-align: top; }
 </style>
+<link rel="stylesheet" href="/vendor/workbench-theme.css">
 </head>
 <body class="font-sans antialiased">
 
@@ -462,10 +463,10 @@ function stgPick(field, value) {
 function renderStagingModal() {
   const modal = document.getElementById('stagingModal');
   const s = stgState;
-  const selCls = 'width:100%;background:#0a0a0f;border:1px solid #252538;border-radius:10px;color:#fff;padding:9px 12px;font-size:13px;outline:none;';
+  const selCls = 'width:100%;background:#f4f6f3;border:1px solid #dfe7e3;border-radius:10px;color:#fff;padding:9px 12px;font-size:13px;outline:none;';
   const photoBtns = s.photos.map((u, i) =>
     '<img src="' + esc(u) + '" onclick="stgPick(\'photoUrl\',\'' + u.replace(/'/g, "\\'") + '\')" style="width:88px;height:60px;object-fit:cover;border-radius:8px;cursor:pointer;border:2px solid ' +
-    (s.photoUrl === u ? '#e0b97a' : 'transparent') + ';opacity:' + (s.photoUrl === u ? '1' : '0.55') + ';" onerror="this.style.display=\'none\'">').join('');
+    (s.photoUrl === u ? '#164d3d' : 'transparent') + ';opacity:' + (s.photoUrl === u ? '1' : '0.55') + ';" onerror="this.style.display=\'none\'">').join('');
   const styleBtns = STG_STYLES.map(([k, label]) =>
     '<button onclick="stgPick(\'style\',\'' + k + '\')" class="px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ' +
     (s.style === k ? 'bg-gold text-black border-gold' : 'bg-surface-elevated text-dim border-border hover:border-gold/50') + '">' + label + '</button>').join('');

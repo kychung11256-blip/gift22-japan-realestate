@@ -5,6 +5,7 @@ import pytest
 
 import db
 import server
+import viewing_planner
 from viewing_planner import ViewingPlanError, decode_polyline, geometry_bounds, google_transit_matrix, google_transit_route, nearest_neighbor_order, optimize_driving, optimize_transit, parse_date_time, parse_iso
 
 
@@ -211,9 +212,41 @@ def test_google_routes_compute_routes_polyline_parsing(monkeypatch):
         assert payload['departureTime'].endswith('Z')
         return {"routes": [{"duration": "123s", "polyline": {"encodedPolyline": "_p~iF~ps|U_ulLnnqC_mqNvxq`@"}}]}
     monkeypatch.setattr('viewing_planner._google_routes_post', fake_routes_post)
+    viewing_planner._transit_route_cache.clear()
     geom = google_transit_route({"lat": 38.5, "lon": -120.2}, {"lat": 40.7, "lon": -120.95}, server.datetime.now(server.timezone.utc))
     assert geom["type"] == "LineString"
     assert geom["coordinates"][0] == [-120.2, 38.5]
+    assert geom["durationSeconds"] == 123
+
+
+def test_google_routes_matrix_route_not_found_uses_real_compute_routes(monkeypatch):
+    monkeypatch.setattr("viewing_planner.GOOGLE_MAPS_API_KEY", "configured-for-test")
+    viewing_planner._transit_route_cache.clear()
+    calls = []
+    def route_not_found_then_real_route(path, payload, field_mask, timeout=25):
+        calls.append({"path": path, "payload": payload, "field_mask": field_mask})
+        if "computeRouteMatrix" in path:
+            return [
+                {"originIndex": 0, "destinationIndex": 0},
+                {"originIndex": 0, "destinationIndex": 1, "status": {"code": 5, "message": "ROUTE_NOT_FOUND"}, "condition": "ROUTE_NOT_FOUND"},
+                {"originIndex": 1, "destinationIndex": 0, "status": {"code": 5, "message": "ROUTE_NOT_FOUND"}, "condition": "ROUTE_NOT_FOUND"},
+                {"originIndex": 1, "destinationIndex": 1},
+            ]
+        assert path.endswith("computeRoutes")
+        assert payload["travelMode"] == "TRANSIT"
+        assert "routingPreference" not in payload
+        assert "intermediates" not in payload
+        assert "computeAlternativeRoutes" not in payload
+        encoded = "_p~iF~ps|U_ulLnnqC_mqNvxq" + chr(96) + "@"
+        return {"routes": [{"duration": "420s", "distanceMeters": 8000, "polyline": {"encodedPolyline": encoded}}]}
+    monkeypatch.setattr("viewing_planner._google_routes_post", route_not_found_then_real_route)
+    departure = parse_iso("2026-09-03T01:00:00Z", "departureAt")
+    origin = {"lat": 35.681236, "lon": 139.767125, "label": "東京駅"}
+    stops = [{"id": "A", "listingId": "A", "lat": 35.692627, "lon": 139.688416}]
+    matrix = google_transit_matrix(origin, stops, departure)
+    assert matrix == [[0, 420], [420, 0]]
+    assert len([c for c in calls if "computeRouteMatrix" in c["path"]]) == 1
+    assert len([c for c in calls if "computeRoutes" in c["path"]]) == 2
 
 
 def test_google_transit_request_denied_is_specific_config_error(monkeypatch):

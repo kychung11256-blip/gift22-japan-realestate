@@ -1,0 +1,303 @@
+"""Gift22 viewing route planner helpers.
+
+MVP route policy:
+- Driving/taxi: Google Directions API with provider waypoint optimization when a
+  configured API key is available. We never fabricate durations on provider
+  failure.
+- Public transit: Google Distance Matrix API for time-aware leg durations, then
+  a deterministic nearest-neighbour + 2-opt heuristic over the provider matrix.
+  If any matrix element is unsupported/unavailable, return an explicit error.
+"""
+
+from __future__ import annotations
+
+import itertools
+import json
+import math
+import os
+import secrets
+import urllib.parse
+import urllib.request
+from datetime import datetime, timedelta, timezone
+from typing import Any, Callable
+
+GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY", "")
+
+ALLOWED_DURATIONS = {30, 45, 60}
+ALLOWED_MODES = {"driving", "transit"}
+
+
+class ViewingPlanError(Exception):
+    def __init__(self, message: str, status: int = 400, code: str = "VALIDATION_ERROR"):
+        super().__init__(message)
+        self.message = message
+        self.status = status
+        self.code = code
+
+
+def parse_iso(value: str, field: str) -> datetime:
+    if not value or not isinstance(value, str):
+        raise ViewingPlanError(f"{field} 必填", 400)
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except Exception:
+        raise ViewingPlanError(f"{field} 格式不正確，請使用 ISO timestamp", 400)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def parse_date_time(viewing_date: str, departure_time: str) -> datetime:
+    if not viewing_date or not departure_time:
+        raise ViewingPlanError("睇樓日期同出發時間必填", 400)
+    try:
+        raw = f"{viewing_date}T{departure_time}"
+        dt = datetime.fromisoformat(raw)
+    except Exception:
+        raise ViewingPlanError("睇樓日期／出發時間格式不正確", 400)
+    # UI input is local planning time; store as UTC-labelled stable value for MVP.
+    return dt.replace(tzinfo=timezone.utc)
+
+
+def coord(value: Any, field: str) -> float:
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        raise ViewingPlanError(f"{field} 座標必須係數字", 400)
+    if field.endswith("lat") and not -90 <= v <= 90:
+        raise ViewingPlanError(f"{field} 座標超出範圍", 400)
+    if field.endswith("lon") and not -180 <= v <= 180:
+        raise ViewingPlanError(f"{field} 座標超出範圍", 400)
+    return v
+
+
+def validate_stop_count(listing_ids: list[str]) -> None:
+    if not isinstance(listing_ids, list):
+        raise ViewingPlanError("listingIds 必須係列表", 400)
+    if len(listing_ids) < 2 or len(listing_ids) > 8:
+        raise ViewingPlanError("請選擇 2 至 8 個睇樓房源", 400)
+    if len(set(listing_ids)) != len(listing_ids):
+        raise ViewingPlanError("睇樓房源不可重複", 400)
+
+
+def make_share_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def public_property(row: dict[str, Any]) -> dict[str, Any]:
+    """Client-safe fields only; no notes, agent/license/internal workflow fields."""
+    price = row.get("price") or 0
+    if price and price < 10_000_000:
+        price_yen = int(price) * 10000
+    else:
+        price_yen = int(price or 0)
+    return {
+        "id": row.get("id"),
+        "title": row.get("building_name") or row.get("address") or row.get("id"),
+        "address": row.get("address") or "",
+        "station": row.get("station") or "",
+        "walkMinutes": int(row.get("walk_min") or 0),
+        "priceYen": price_yen,
+        "areaSqm": float(row.get("size_sqm") or 0),
+        "layout": row.get("room_layout") or "",
+        "floor": int(row.get("floor") or 0) or None,
+        "totalFloors": int(row.get("total_floors") or row.get("floors_above") or 0) or None,
+        "builtAt": row.get("built_date_full") or (f"{int(row.get('built_year') or 0)}年" if row.get("built_year") else ""),
+        "latitude": float(row.get("latitude") or 0),
+        "longitude": float(row.get("longitude") or 0),
+        "url": f"/listing/{urllib.parse.quote(str(row.get('id') or ''))}",
+    }
+
+
+def nav_url(origin: dict[str, Any], dest: dict[str, Any], mode: str) -> str:
+    travelmode = "driving" if mode == "driving" else "transit"
+    origin_q = f"{origin['lat']},{origin['lon']}"
+    dest_q = f"{dest['lat']},{dest['lon']}"
+    return "https://www.google.com/maps/dir/?api=1&" + urllib.parse.urlencode({
+        "origin": origin_q,
+        "destination": dest_q,
+        "travelmode": travelmode,
+    })
+
+
+def build_schedule(order: list[dict[str, Any]], leg_minutes: list[int], departure: datetime, duration_min: int, mode: str, end_location: dict[str, Any] | None = None) -> dict[str, Any]:
+    stops = []
+    current = departure
+    total_travel = 0
+    prev = {"lat": order[0]["lat"], "lon": order[0]["lon"], "label": order[0].get("label") or order[0].get("address") or "出發點"}
+    for i, stop in enumerate(order[1:], start=1):
+        travel = int(math.ceil(float(leg_minutes[i - 1])))
+        total_travel += travel
+        depart_at = current
+        arrive_at = depart_at + timedelta(minutes=travel)
+        view_end = arrive_at + timedelta(minutes=duration_min)
+        stop = dict(stop)
+        stop.update({
+            "seq": i,
+            "travelMinutes": travel,
+            "departAt": depart_at.isoformat(),
+            "arriveAt": arrive_at.isoformat(),
+            "viewingStartAt": arrive_at.isoformat(),
+            "viewingEndAt": view_end.isoformat(),
+            "navigationUrl": nav_url(prev, stop, mode),
+        })
+        stops.append(stop)
+        current = view_end
+        prev = stop
+    end_leg = None
+    if end_location and len(leg_minutes) > len(stops):
+        travel = int(math.ceil(float(leg_minutes[len(stops)])))
+        total_travel += travel
+        end_arrive = current + timedelta(minutes=travel)
+        end_leg = {
+            "label": end_location.get("label") or end_location.get("address") or "終點",
+            "lat": end_location.get("lat"),
+            "lon": end_location.get("lon"),
+            "travelMinutes": travel,
+            "departAt": current.isoformat(),
+            "arriveAt": end_arrive.isoformat(),
+            "navigationUrl": nav_url(prev, end_location, mode),
+        }
+        current = end_arrive
+    return {
+        "stops": stops,
+        "totalTravelMinutes": total_travel,
+        "totalItineraryMinutes": int((current - departure).total_seconds() // 60),
+        "departureAt": departure.isoformat(),
+        "finishAt": current.isoformat(),
+        "endLeg": end_leg,
+    }
+
+
+def _google_get(url: str, timeout: int = 25) -> dict[str, Any]:
+    req = urllib.request.Request(url, headers={"User-Agent": "Gift22-viewing-planner/1.0"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read())
+
+
+def optimize_driving(origin: dict[str, Any], stops: list[dict[str, Any]], departure: datetime, duration_min: int, google_get: Callable[[str], dict[str, Any]] | None = None, optimize_waypoints: bool = True, end_location: dict[str, Any] | None = None) -> dict[str, Any]:
+    if not GOOGLE_MAPS_API_KEY:
+        raise ViewingPlanError("GOOGLE_MAPS_API_KEY 未設定；未能使用 Google Directions waypoint optimization，唔會估算行車時間。", 503, "PROVIDER_NOT_CONFIGURED")
+    google_get = google_get or _google_get
+    origin_s = f"{origin['lat']},{origin['lon']}"
+    dest = end_location or stops[-1]
+    middle = stops if end_location else stops[:-1]
+    params = {
+        "origin": origin_s,
+        "destination": f"{dest['lat']},{dest['lon']}",
+        "mode": "driving",
+        "departure_time": str(int(departure.timestamp())),
+        "traffic_model": "best_guess",
+        "language": "zh-TW",
+        "key": GOOGLE_MAPS_API_KEY,
+    }
+    if middle:
+        prefix = "optimize:true|" if optimize_waypoints else ""
+        params["waypoints"] = prefix + "|".join(f"{s['lat']},{s['lon']}" for s in middle)
+    url = "https://maps.googleapis.com/maps/api/directions/json?" + urllib.parse.urlencode(params, safe="|,:" )
+    try:
+        g = google_get(url)
+    except Exception as e:
+        raise ViewingPlanError(f"Google Directions 呼叫失敗：{e}", 502, "PROVIDER_ERROR")
+    if g.get("status") != "OK" or not g.get("routes"):
+        raise ViewingPlanError(f"Google Directions 限制／錯誤：{g.get('status')} {g.get('error_message','')}", 502, "PROVIDER_ERROR")
+    route = g["routes"][0]
+    wp_order = route.get("waypoint_order", list(range(len(middle))))
+    if end_location:
+        ordered = [middle[i] for i in wp_order]
+    else:
+        ordered = [middle[i] for i in wp_order] + [dest]
+    leg_minutes = []
+    for leg in route.get("legs", []):
+        sec = (leg.get("duration_in_traffic") or leg.get("duration") or {}).get("value")
+        if not sec:
+            raise ViewingPlanError("Google Directions 未提供某段行車時間，已停止，唔會估算。", 502, "PROVIDER_ERROR")
+        leg_minutes.append(math.ceil(sec / 60))
+    heuristic = "provider_waypoint_optimization" if optimize_waypoints else "manual_order_recalculation"
+    return {"provider": "google_directions", "heuristic": heuristic, **build_schedule([origin] + ordered, leg_minutes, departure, duration_min, "driving", end_location=end_location)}
+
+
+def nearest_neighbor_order(matrix: list[list[int]], count: int) -> list[int]:
+    """Deterministic public-transit heuristic: nearest neighbour then 2-opt.
+
+    Nodes: 0 is origin, 1..count are properties. Ties break by original index.
+    """
+    remaining = set(range(1, count + 1))
+    order = []
+    cur = 0
+    while remaining:
+        nxt = min(remaining, key=lambda j: (matrix[cur][j], j))
+        order.append(nxt)
+        remaining.remove(nxt)
+        cur = nxt
+    improved = True
+    while improved:
+        improved = False
+        for i, j in itertools.combinations(range(len(order)), 2):
+            cand = order[:i] + list(reversed(order[i:j + 1])) + order[j + 1:]
+            if _path_cost(matrix, cand) < _path_cost(matrix, order):
+                order = cand
+                improved = True
+    return [i - 1 for i in order]
+
+
+def _path_cost(matrix: list[list[int]], order_nodes: list[int]) -> int:
+    cur = 0
+    total = 0
+    for n in order_nodes:
+        total += matrix[cur][n]
+        cur = n
+    return total
+
+
+def optimize_transit(origin: dict[str, Any], stops: list[dict[str, Any]], departure: datetime, duration_min: int, matrix_provider: Callable[..., list[list[int]]] | None = None, manual_order: bool = False) -> dict[str, Any]:
+    if matrix_provider is None and not GOOGLE_MAPS_API_KEY:
+        raise ViewingPlanError("GOOGLE_MAPS_API_KEY 未設定；未能使用 Google Distance Matrix transit，唔會估算公共交通時間。", 503, "PROVIDER_NOT_CONFIGURED")
+    matrix = matrix_provider(origin, stops, departure) if matrix_provider else google_transit_matrix(origin, stops, departure)
+    n = len(stops)
+    if len(matrix) != n + 1 or any(len(row) != n + 1 for row in matrix):
+        raise ViewingPlanError("公共交通 matrix 回應格式不完整，已停止，唔會估算。", 502, "PROVIDER_ERROR")
+    for r, row in enumerate(matrix):
+        for c, value in enumerate(row):
+            if r != c and (value is None or int(value) <= 0):
+                raise ViewingPlanError("公共交通 provider 未支援其中一段路線，已停止，唔會估算時間。", 502, "PROVIDER_ERROR")
+    order_idx = list(range(n)) if manual_order else nearest_neighbor_order(matrix, n)
+    ordered = [stops[i] for i in order_idx]
+    leg_minutes = []
+    cur = 0
+    for idx in order_idx:
+        node = idx + 1
+        leg_minutes.append(math.ceil(matrix[cur][node] / 60))
+        cur = node
+    heuristic = "manual_order_recalculation" if manual_order else "nearest-neighbour + deterministic 2-opt over time-aware transit matrix"
+    return {"provider": "google_distance_matrix", "heuristic": heuristic, **build_schedule([origin] + ordered, leg_minutes, departure, duration_min, "transit")}
+
+
+def google_transit_matrix(origin: dict[str, Any], stops: list[dict[str, Any]], departure: datetime) -> list[list[int]]:
+    nodes = [origin] + stops
+    locs = [f"{x['lat']},{x['lon']}" for x in nodes]
+    params = {
+        "origins": "|".join(locs),
+        "destinations": "|".join(locs),
+        "mode": "transit",
+        "departure_time": str(int(departure.timestamp())),
+        "language": "zh-TW",
+        "key": GOOGLE_MAPS_API_KEY,
+    }
+    url = "https://maps.googleapis.com/maps/api/distancematrix/json?" + urllib.parse.urlencode(params, safe="|,:")
+    try:
+        g = _google_get(url)
+    except Exception as e:
+        raise ViewingPlanError(f"Google Distance Matrix 呼叫失敗：{e}", 502, "PROVIDER_ERROR")
+    if g.get("status") != "OK":
+        raise ViewingPlanError(f"Google Distance Matrix 限制／錯誤：{g.get('status')} {g.get('error_message','')}", 502, "PROVIDER_ERROR")
+    matrix: list[list[int]] = []
+    for row in g.get("rows", []):
+        vals = []
+        for el in row.get("elements", []):
+            if el.get("status") == "OK" and el.get("duration"):
+                vals.append(int(el["duration"]["value"]))
+            else:
+                vals.append(0)
+        matrix.append(vals)
+    return matrix

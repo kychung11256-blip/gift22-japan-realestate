@@ -123,7 +123,53 @@ def init_db():
             FOREIGN KEY (listing_id) REFERENCES listings(id) ON DELETE CASCADE
         );
 
+        CREATE TABLE IF NOT EXISTS viewing_plans (
+            id TEXT PRIMARY KEY,
+            client_id TEXT NOT NULL,
+            title TEXT DEFAULT '',
+            travel_mode TEXT NOT NULL CHECK(travel_mode IN ('driving','transit')),
+            viewing_date TEXT NOT NULL,
+            departure_at TEXT NOT NULL,
+            start_label TEXT NOT NULL,
+            start_lat REAL NOT NULL,
+            start_lon REAL NOT NULL,
+            end_label TEXT DEFAULT '',
+            end_lat REAL DEFAULT 0,
+            end_lon REAL DEFAULT 0,
+            viewing_duration_min INTEGER NOT NULL CHECK(viewing_duration_min IN (30,45,60)),
+            provider TEXT DEFAULT '',
+            heuristic TEXT DEFAULT '',
+            warnings TEXT DEFAULT '[]',
+            totals TEXT DEFAULT '{}',
+            share_token TEXT UNIQUE,
+            share_revoked_at TEXT DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS viewing_plan_stops (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            plan_id TEXT NOT NULL,
+            listing_id TEXT NOT NULL,
+            seq INTEGER NOT NULL,
+            travel_minutes INTEGER NOT NULL,
+            depart_at TEXT NOT NULL,
+            arrive_at TEXT NOT NULL,
+            viewing_start_at TEXT NOT NULL,
+            viewing_end_at TEXT NOT NULL,
+            navigation_url TEXT NOT NULL,
+            snapshot_json TEXT DEFAULT '{}',
+            created_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(plan_id, seq),
+            FOREIGN KEY (plan_id) REFERENCES viewing_plans(id) ON DELETE CASCADE,
+            FOREIGN KEY (listing_id) REFERENCES listings(id) ON DELETE CASCADE
+        );
+
         CREATE INDEX IF NOT EXISTS idx_client_shortlists_listing ON client_shortlists(listing_id);
+        CREATE INDEX IF NOT EXISTS idx_viewing_plans_client ON viewing_plans(client_id);
+        CREATE INDEX IF NOT EXISTS idx_viewing_plans_share_token ON viewing_plans(share_token);
+        CREATE INDEX IF NOT EXISTS idx_viewing_stops_plan ON viewing_plan_stops(plan_id);
         CREATE INDEX IF NOT EXISTS idx_listings_status ON listings(status);
         CREATE INDEX IF NOT EXISTS idx_listings_agent ON listings(agent_id);
         CREATE INDEX IF NOT EXISTS idx_listings_price ON listings(price);

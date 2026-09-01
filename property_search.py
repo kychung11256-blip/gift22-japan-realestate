@@ -60,7 +60,12 @@ def canonical_direction(value, *, require_marker=False):
 def infer_direction(item):
     structured = canonical_direction(item.get("orientation"))
     if structured:
-        return structured, "structured", 1.0
+        source = normalize_text(item.get("orientation_source")) or "structured"
+        try:
+            confidence = float(item.get("orientation_confidence") or 1.0)
+        except (TypeError, ValueError):
+            confidence = 1.0
+        return structured, source, confidence
 
     evidence_fields = (
         ("notes_freetext", "notes"),

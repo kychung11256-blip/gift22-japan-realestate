@@ -581,11 +581,41 @@ def listing_detail(listing_id):
 
 
 # ── Private Property Workbench API v1 ──
+def _v1_client_assignments(conn, listing_ids=None):
+    sql = """
+        SELECT cs.listing_id, c.id, c.name, cs.search_query, cs.note, cs.created_at
+        FROM client_shortlists cs
+        JOIN clients c ON c.id = cs.client_id
+    """
+    params = []
+    if listing_ids:
+        placeholders = ",".join("?" for _ in listing_ids)
+        sql += f" WHERE cs.listing_id IN ({placeholders})"
+        params.extend(listing_ids)
+    sql += " ORDER BY cs.created_at DESC"
+    result = {}
+    for row in conn.execute(sql, params).fetchall():
+        result.setdefault(row["listing_id"], []).append({
+            "id": row["id"],
+            "name": row["name"],
+            "searchQuery": row["search_query"] or "",
+            "note": row["note"] or "",
+            "addedAt": row["created_at"] or "",
+        })
+    return result
+
+
 def _v1_all_properties():
     conn = get_db()
     rows = conn.execute("SELECT * FROM listings").fetchall()
+    assignments = _v1_client_assignments(conn)
     conn.close()
-    return [standardize_property(_row_to_dict(row)) for row in rows]
+    properties = []
+    for row in rows:
+        data = _row_to_dict(row)
+        data["_client_assignments"] = assignments.get(data["id"], [])
+        properties.append(standardize_property(data))
+    return properties
 
 
 @app.route('/api/v1/properties')
@@ -651,13 +681,103 @@ def v1_property_detail(listing_id):
     conn.close()
     if not row:
         return jsonify({'code': 0, 'error': 'Property not found'}), 404
-    return jsonify(standardize_property(_row_to_dict(row)))
+    conn = get_db()
+    assignments = _v1_client_assignments(conn, [listing_id])
+    conn.close()
+    data = _row_to_dict(row)
+    data["_client_assignments"] = assignments.get(listing_id, [])
+    return jsonify(standardize_property(data))
 
 
 @app.route('/api/v1/property-stats')
 @_workbench_auth_required
 def v1_property_stats():
     return jsonify(property_stats(_v1_all_properties()))
+
+
+@app.route('/api/v1/clients', methods=['GET', 'POST'])
+@_workbench_auth_required
+def v1_clients():
+    conn = get_db()
+    if request.method == 'POST':
+        data = request.get_json(silent=True) or {}
+        name = str(data.get('name') or '').strip()
+        requirement = str(data.get('requirementText') or '').strip()
+        if not name:
+            conn.close()
+            return jsonify({'code': 0, 'error': 'Client name is required'}), 400
+        if len(name) > 80 or len(requirement) > 2000:
+            conn.close()
+            return jsonify({'code': 0, 'error': 'Client data is too long'}), 400
+        client_id = 'CL-' + uuid.uuid4().hex[:12].upper()
+        now = datetime.now(timezone.utc).isoformat()
+        conn.execute(
+            "INSERT INTO clients (id, name, requirement_text, created_at, updated_at) VALUES (?,?,?,?,?)",
+            (client_id, name, requirement, now, now),
+        )
+        conn.commit()
+        row = conn.execute("SELECT * FROM clients WHERE id=?", (client_id,)).fetchone()
+        conn.close()
+        return jsonify({'code': 1, 'client': dict(row)}), 201
+
+    rows = conn.execute("""
+        SELECT c.*, COUNT(cs.listing_id) AS shortlist_count
+        FROM clients c
+        LEFT JOIN client_shortlists cs ON cs.client_id = c.id
+        WHERE c.status = 'active'
+        GROUP BY c.id
+        ORDER BY c.updated_at DESC
+    """).fetchall()
+    conn.close()
+    return jsonify({'code': 1, 'clients': [dict(row) for row in rows]})
+
+
+@app.route('/api/v1/shortlists', methods=['POST'])
+@_workbench_auth_required
+def v1_add_shortlist():
+    data = request.get_json(silent=True) or {}
+    client_id = str(data.get('clientId') or '').strip()
+    listing_id = str(data.get('listingId') or '').strip()
+    search_query = str(data.get('searchQuery') or '').strip()[:500]
+    note = str(data.get('note') or '').strip()[:1000]
+    if not client_id or not listing_id:
+        return jsonify({'code': 0, 'error': 'clientId and listingId are required'}), 400
+
+    conn = get_db()
+    client = conn.execute("SELECT id, name FROM clients WHERE id=? AND status='active'", (client_id,)).fetchone()
+    listing = conn.execute("SELECT id FROM listings WHERE id=?", (listing_id,)).fetchone()
+    if not client or not listing:
+        conn.close()
+        return jsonify({'code': 0, 'error': 'Client or property not found'}), 404
+    before = conn.total_changes
+    conn.execute("""
+        INSERT INTO client_shortlists (client_id, listing_id, search_query, note)
+        VALUES (?,?,?,?)
+        ON CONFLICT(client_id, listing_id) DO UPDATE SET
+            search_query=excluded.search_query,
+            note=CASE WHEN excluded.note != '' THEN excluded.note ELSE client_shortlists.note END
+    """, (client_id, listing_id, search_query, note))
+    created = conn.total_changes > before
+    conn.execute("UPDATE clients SET updated_at=? WHERE id=?", (datetime.now(timezone.utc).isoformat(), client_id))
+    conn.commit()
+    conn.close()
+    return jsonify({
+        'code': 1,
+        'created': created,
+        'client': {'id': client['id'], 'name': client['name']},
+        'listingId': listing_id,
+    })
+
+
+@app.route('/api/v1/shortlists/<client_id>/<listing_id>', methods=['DELETE'])
+@_workbench_auth_required
+def v1_remove_shortlist(client_id, listing_id):
+    conn = get_db()
+    conn.execute("DELETE FROM client_shortlists WHERE client_id=? AND listing_id=?", (client_id, listing_id))
+    removed = conn.total_changes > 0
+    conn.commit()
+    conn.close()
+    return jsonify({'code': 1, 'removed': removed})
 
 
 @app.route('/api/v1/properties/<listing_id>/review', methods=['PATCH'])

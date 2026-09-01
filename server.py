@@ -234,32 +234,34 @@ def update_listing(listing_id):
 # ── Search API ──
 @app.route('/api/search')
 def search():
-    q = request.args.get('q', '').strip().lower()
+    """Search the local published library with deterministic hard constraints."""
+    q = request.args.get('q', '').strip()
     conn = get_db()
-    if q:
-        # Build query: search text fields + keywords
-        results = conn.execute("""
-            SELECT * FROM listings
-            WHERE status = 'published'
-            AND (
-                address LIKE ? OR station LIKE ? OR room_layout LIKE ? OR
-                ai_generated_copy LIKE ? OR ai_keywords LIKE ? OR
-                structure LIKE ? OR type LIKE ? OR orientation LIKE ?
-            )
-            ORDER BY
-                CASE WHEN address LIKE ? THEN 0 ELSE 1 END,
-                price ASC
-            LIMIT 8
-        """, (f'%{q}%',) * 8 + (f'%{q}%',)).fetchall()
-    else:
-        results = conn.execute("""
+    if not q:
+        rows = conn.execute("""
             SELECT * FROM listings WHERE status='published'
             ORDER BY price DESC LIMIT 8
         """).fetchall()
+        listings = [_row_to_dict(row) for row in rows]
+        conn.close()
+        return jsonify({'count': len(listings), 'listings': listings, 'constraints': {}})
 
-    listings = [_row_to_dict(r) for r in results]
+    # Do not use a broad SQL LIKE shortcut here.  A query such as "3億以下"
+    # must always execute the numeric ceiling even if the phrase also appears
+    # in generated copy or notes.
+    rows = conn.execute("""
+        SELECT * FROM listings WHERE status='published'
+        ORDER BY updated_at DESC
+    """).fetchall()
     conn.close()
-    return jsonify({'count': len(listings), 'listings': listings})
+
+    from property_search import filter_local_listings, parse_query
+    listings = filter_local_listings([_row_to_dict(row) for row in rows], q)
+    return jsonify({
+        'count': len(listings),
+        'listings': listings[:100],
+        'constraints': parse_query(q),
+    })
 
 @app.route('/api/market-intel')
 def market_intel():

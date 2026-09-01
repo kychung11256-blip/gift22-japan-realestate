@@ -749,7 +749,10 @@ def v1_add_shortlist():
     if not client or not listing:
         conn.close()
         return jsonify({'code': 0, 'error': 'Client or property not found'}), 404
-    before = conn.total_changes
+    existing = conn.execute(
+        "SELECT 1 FROM client_shortlists WHERE client_id=? AND listing_id=?",
+        (client_id, listing_id),
+    ).fetchone()
     conn.execute("""
         INSERT INTO client_shortlists (client_id, listing_id, search_query, note)
         VALUES (?,?,?,?)
@@ -757,7 +760,7 @@ def v1_add_shortlist():
             search_query=excluded.search_query,
             note=CASE WHEN excluded.note != '' THEN excluded.note ELSE client_shortlists.note END
     """, (client_id, listing_id, search_query, note))
-    created = conn.total_changes > before
+    created = existing is None
     conn.execute("UPDATE clients SET updated_at=? WHERE id=?", (datetime.now(timezone.utc).isoformat(), client_id))
     conn.commit()
     conn.close()

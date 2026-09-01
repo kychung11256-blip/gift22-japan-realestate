@@ -201,7 +201,8 @@ def test_google_routes_matrix_parsing_transit_geometry_and_element_failure(monke
     with pytest.raises(ViewingPlanError) as exc:
         google_transit_matrix(origin, stops[:1], server.datetime.now(server.timezone.utc))
     assert exc.value.code in {"PROVIDER_UNSUPPORTED_ROUTE", "PROVIDER_ERROR"}
-    assert "Routes API Compute Route Matrix" in exc.value.message
+    assert "Google Routes API" in exc.value.message
+    assert "唔會估算" in exc.value.message
 
 
 def test_google_routes_compute_routes_polyline_parsing(monkeypatch):

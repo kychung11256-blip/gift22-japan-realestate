@@ -34,6 +34,8 @@ def init_db():
             age INTEGER DEFAULT 0,
             room_layout TEXT DEFAULT '',
             orientation TEXT DEFAULT '',
+            orientation_source TEXT DEFAULT '',
+            orientation_confidence REAL DEFAULT 0,
             floor INTEGER DEFAULT 0,
             total_floors INTEGER DEFAULT 0,
             structure TEXT DEFAULT '',
@@ -124,6 +126,8 @@ def init_db():
             ('management_type', "ALTER TABLE listings ADD COLUMN management_type TEXT DEFAULT ''"),
             ('registration_no', "ALTER TABLE listings ADD COLUMN registration_no TEXT DEFAULT ''"),
             ('underground_floors', "ALTER TABLE listings ADD COLUMN underground_floors INTEGER DEFAULT 0"),
+            ('orientation_source', "ALTER TABLE listings ADD COLUMN orientation_source TEXT DEFAULT ''"),
+            ('orientation_confidence', "ALTER TABLE listings ADD COLUMN orientation_confidence REAL DEFAULT 0"),
         ):
             if col not in existing_cols:
                 conn.execute(ddl)

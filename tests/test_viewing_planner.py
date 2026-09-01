@@ -5,7 +5,7 @@ import pytest
 
 import db
 import server
-from viewing_planner import ViewingPlanError, decode_polyline, geometry_bounds, google_transit_matrix, nearest_neighbor_order, optimize_driving, optimize_transit
+from viewing_planner import ViewingPlanError, decode_polyline, geometry_bounds, google_transit_matrix, google_transit_route, nearest_neighbor_order, optimize_driving, optimize_transit, parse_date_time, parse_iso
 
 
 def auth_header():
@@ -147,7 +147,7 @@ def test_driving_polyline_decoding_and_geometry_serialization(monkeypatch):
     assert result.get("warnings") == []
 
 
-def test_transit_multileg_geometry_and_unavailable_warning(monkeypatch):
+def test_google_routes_matrix_parsing_transit_geometry_and_element_failure(monkeypatch):
     monkeypatch.setattr('viewing_planner.GOOGLE_MAPS_API_KEY', 'configured-for-test')
     origin = {"lat": 35.0, "lon": 139.0, "label": "start"}
     stops = [
@@ -155,43 +155,88 @@ def test_transit_multileg_geometry_and_unavailable_warning(monkeypatch):
         {"id": "B", "listingId": "B", "lat": 35.2, "lon": 139.2},
     ]
     calls = []
-    def fake_get(url):
-        calls.append(url)
-        if 'distancematrix' in url:
-            return {"status": "OK", "rows": [
-                {"elements": [{"status":"OK","duration":{"value":0}}, {"status":"OK","duration":{"value":600}}, {"status":"OK","duration":{"value":900}}]},
-                {"elements": [{"status":"OK","duration":{"value":600}}, {"status":"OK","duration":{"value":0}}, {"status":"OK","duration":{"value":500}}]},
-                {"elements": [{"status":"OK","duration":{"value":900}}, {"status":"OK","duration":{"value":500}}, {"status":"OK","duration":{"value":0}}]},
-            ]}
-        return google_directions_response()
-    monkeypatch.setattr('viewing_planner._google_get', fake_get)
+    def fake_routes_post(path, payload, field_mask, timeout=25):
+        calls.append({"path": path, "field_mask": field_mask, "payload": payload})
+        assert 'key=' not in path
+        assert 'maps.googleapis.com/maps/api/distancematrix' not in path.lower()
+        assert 'directions/json' not in path.lower()
+        if 'computeRouteMatrix' in path:
+            return [
+                {"originIndex": 0, "destinationIndex": 0},
+                {"originIndex": 0, "destinationIndex": 1, "duration": "600s", "condition": "ROUTE_EXISTS"},
+                {"originIndex": 0, "destinationIndex": 2, "duration": "900s", "condition": "ROUTE_EXISTS"},
+                {"originIndex": 1, "destinationIndex": 0, "duration": "600s", "condition": "ROUTE_EXISTS"},
+                {"originIndex": 1, "destinationIndex": 1},
+                {"originIndex": 1, "destinationIndex": 2, "duration": "500s", "condition": "ROUTE_EXISTS"},
+                {"originIndex": 2, "destinationIndex": 0, "duration": "900s", "condition": "ROUTE_EXISTS"},
+                {"originIndex": 2, "destinationIndex": 1, "duration": "500s", "condition": "ROUTE_EXISTS"},
+                {"originIndex": 2, "destinationIndex": 2},
+            ]
+        return {"routes": [{"duration": "600s", "polyline": {"encodedPolyline": "_p~iF~ps|U_ulLnnqC_mqNvxq`@"}}]}
+    monkeypatch.setattr('viewing_planner._google_routes_post', fake_routes_post)
+    matrix = google_transit_matrix(origin, stops, server.datetime.now(server.timezone.utc))
+    assert matrix[0][1] == 600
+    assert matrix[1][2] == 500
     res = optimize_transit(origin, stops, server.datetime.now(server.timezone.utc), 45, matrix_provider=None, manual_order=True)
+    assert res["provider"] == "google_routes_api"
     assert res["routeGeometry"]["type"] == "MultiLineString"
     assert len(res["routeGeometry"]["coordinates"]) == 2
-    assert len([u for u in calls if 'directions' in u]) == 2
+    assert len([c for c in calls if 'computeRoutes' in c['path']]) == 2
+    assert any('originIndex,destinationIndex,status,condition,duration,distanceMeters' == c['field_mask'] for c in calls)
 
-    monkeypatch.setattr('viewing_planner._geometry_cache', {})
-    def no_geom(url):
-        if 'distancematrix' in url:
-            return fake_get(url)
-        return {"status": "ZERO_RESULTS", "routes": []}
-    monkeypatch.setattr('viewing_planner._google_get', no_geom)
-    res2 = optimize_transit(origin, stops, server.datetime.now(server.timezone.utc), 45, matrix_provider=None, manual_order=True)
-    assert not res2.get("routeGeometry")
-    assert "不會畫假路線" in res2["warnings"][0]["message"]
+    assert not any('maps.googleapis.com/maps/api/distancematrix' in str(c).lower() or 'directions/json' in str(c).lower() for c in calls)
+
+    def bad_matrix(path, payload, field_mask, timeout=25):
+        if 'computeRouteMatrix' in path:
+            return [
+                {"originIndex": 0, "destinationIndex": 0},
+                {"originIndex": 0, "destinationIndex": 1, "status": {"code": 5, "message": "no transit"}},
+                {"originIndex": 1, "destinationIndex": 0, "duration": "600s"},
+                {"originIndex": 1, "destinationIndex": 1},
+            ]
+        return {}
+    monkeypatch.setattr('viewing_planner._google_routes_post', bad_matrix)
+    with pytest.raises(ViewingPlanError) as exc:
+        google_transit_matrix(origin, stops[:1], server.datetime.now(server.timezone.utc))
+    assert exc.value.code in {"PROVIDER_UNSUPPORTED_ROUTE", "PROVIDER_ERROR"}
+    assert "Routes API Compute Route Matrix" in exc.value.message
+
+
+def test_google_routes_compute_routes_polyline_parsing(monkeypatch):
+    monkeypatch.setattr('viewing_planner.GOOGLE_MAPS_API_KEY', 'configured-for-test')
+    def fake_routes_post(path, payload, field_mask, timeout=25):
+        assert path.endswith('computeRoutes')
+        assert field_mask == 'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline'
+        assert payload['travelMode'] == 'TRANSIT'
+        assert payload['departureTime'].endswith('Z')
+        return {"routes": [{"duration": "123s", "polyline": {"encodedPolyline": "_p~iF~ps|U_ulLnnqC_mqNvxq`@"}}]}
+    monkeypatch.setattr('viewing_planner._google_routes_post', fake_routes_post)
+    geom = google_transit_route({"lat": 38.5, "lon": -120.2}, {"lat": 40.7, "lon": -120.95}, server.datetime.now(server.timezone.utc))
+    assert geom["type"] == "LineString"
+    assert geom["coordinates"][0] == [-120.2, 38.5]
 
 
 def test_google_transit_request_denied_is_specific_config_error(monkeypatch):
     monkeypatch.setattr('viewing_planner.GOOGLE_MAPS_API_KEY', 'configured-for-test')
-    monkeypatch.setattr('viewing_planner._google_get', lambda url: {"status": "REQUEST_DENIED", "error_message": "This API key is not authorized to use this service or API."})
+    def denied(path, payload, field_mask, timeout=25):
+        raise ViewingPlanError('Google Routes API 拒絕請求（PERMISSION_DENIED）：API key 未獲授權使用 Routes API。', 502, 'PROVIDER_CONFIG_ERROR')
+    monkeypatch.setattr('viewing_planner._google_routes_post', denied)
     origin = {"lat": 35.0, "lon": 139.0, "label": "start"}
     stops = [{"id": "A", "listingId": "A", "lat": 35.1, "lon": 139.1}]
     with pytest.raises(ViewingPlanError) as exc:
         google_transit_matrix(origin, stops, server.datetime.now(server.timezone.utc))
     assert exc.value.status == 502
     assert exc.value.code == "PROVIDER_CONFIG_ERROR"
-    assert "Distance Matrix API" in exc.value.message
+    assert "Routes API" in exc.value.message
     assert "API key 未獲授權" in exc.value.message
+
+
+def test_japan_timezone_conversion_regression():
+    dt = parse_date_time("2026-09-02", "10:00")
+    assert dt.tzinfo is not None
+    assert dt.isoformat() == "2026-09-02T01:00:00+00:00"
+    assert parse_iso("2026-09-02T10:00:00", "departureAt").isoformat() == "2026-09-02T01:00:00+00:00"
+    assert parse_iso("2026-09-02T10:00:00+09:00", "departureAt").isoformat() == "2026-09-02T01:00:00+00:00"
 
 
 def test_planner_unexpected_exception_returns_json_envelope(app_client, monkeypatch):

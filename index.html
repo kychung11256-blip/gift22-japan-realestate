@@ -427,7 +427,7 @@ function showReinsResults(results,d){
         <div class="text-xs text-dim mb-2">${l.area?l.area+'m²':''} ${l.layout?esc(l.layout):''} ${l.floor?l.floor+'階':''}</div>
         <div class="text-xs text-dim mb-2">${esc(l.line||'')} ${esc(l.station||'')} ${l.walk_min?'徒歩'+l.walk_min+'分':''}</div>
         <div class="text-[10px] text-dim mb-2">物件番号: ${esc(l.reins_id||'')} ｜ 図面: ${l.drawing_available?'有':'無'}</div>
-        <button onclick="importReinsItem('${esc(l.reins_id)}',${!!l.drawing_available},this)" class="w-full mt-1 bg-gold hover:bg-gold-dark text-black text-xs font-bold px-3 py-2 rounded-lg transition-colors">匯入此物件 →</button>
+        <button onclick="importReinsItem('${esc(l.reins_id)}',${!!l.drawing_available},this)" class="w-full mt-1 bg-gold hover:bg-gold-dark text-black text-xs font-bold px-3 py-2 rounded-lg transition-colors">${activeClient()?'匯入並加入 '+esc(activeClient().name):'匯入此物件 →'}</button>
       </div>
     `).join('');
   }
@@ -458,7 +458,13 @@ async function pollNlImport(jobId,btn,reinsId){
     const it=(d.items||[])[0]||{};
     if(d.status==='running'){btn.textContent=`匯入中（${it.status||''}）...`;setTimeout(()=>pollNlImport(jobId,btn,reinsId),2000);return;}
     if(it.status==='success'||it.status==='partial'){
-      btn.outerHTML=`<a href="/listing/${it.listing_id}" class="block w-full mt-1 text-center bg-good text-black text-xs font-bold px-3 py-2 rounded-lg">查看物件 →</a>`;
+      const client=activeClient();
+      if(client){
+        try{await assignListingToActiveClient(it.listing_id);btn.outerHTML=`<a href="/workbench" class="block w-full mt-1 text-center bg-good text-black text-xs font-bold px-3 py-2 rounded-lg">已加入 ${esc(client.name)} 私人房源 →</a>`}
+        catch(e){btn.textContent='已匯入，但加入客戶失敗';btn.disabled=false}
+      }else{
+        btn.outerHTML=`<a href="/listing/${it.listing_id}" class="block w-full mt-1 text-center bg-good text-black text-xs font-bold px-3 py-2 rounded-lg">查看物件 →</a>`;
+      }
     }else{
       btn.textContent='失敗: '+(it.error||'');btn.disabled=false;
     }
@@ -466,6 +472,25 @@ async function pollNlImport(jobId,btn,reinsId){
 }
 
 function esc(s){const d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
+
+function activeClient(){
+  try{return JSON.parse(localStorage.getItem('gift22-active-client')||'null')}catch{return null}
+}
+async function assignListingToActiveClient(listingId){
+  const client=activeClient();
+  if(!client)throw new Error('請先喺私人房源站建立或選擇客戶');
+  const r=await fetch('/api/v1/shortlists',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientId:client.id,listingId,searchQuery:document.getElementById('searchInput').value.trim()})});
+  let d={};try{d=await r.json()}catch{}
+  if(!r.ok)throw new Error(r.status===401?'請先登入私人房源站':(d.error||'加入失敗'));
+  return d;
+}
+async function addLocalToShortlist(listingId,btn){
+  const client=activeClient();
+  if(!client){if(confirm('請先去私人房源站建立或選擇客戶。現在開啟？'))window.open('/workbench','_blank');return}
+  btn.disabled=true;btn.textContent='加入中…';
+  try{await assignListingToActiveClient(listingId);btn.textContent='已加入 '+client.name;btn.classList.remove('bg-gold');btn.classList.add('bg-good')}
+  catch(e){btn.disabled=false;btn.textContent=e.message;if(String(e.message).includes('登入'))window.open('/workbench','_blank')}
+}
 
 function showResults(results,query){
   const grid=document.getElementById('resultsGrid');
@@ -479,7 +504,7 @@ function showResults(results,query){
     grid.innerHTML='<div class="col-span-full text-center py-12 text-dim">沒有找到匹配的物件<br><span class="text-xs">試試其他搜尋條件</span></div>';
   }else{
     grid.innerHTML=results.map(p=>`
-      <a href="/listing/${p.id}" class="block bg-surface-card border border-border rounded-2xl p-4 relative transition-all duration-300 hover:border-gold/50 hover:shadow-lg hover:shadow-gold/5 hover:-translate-y-0.5 no-underline" style="text-decoration:none;color:inherit;">
+      <article class="block bg-surface-card border border-border rounded-2xl p-4 relative transition-all duration-300 hover:border-gold/50 hover:shadow-lg hover:shadow-gold/5 hover:-translate-y-0.5">
         ${(p.yield_surface||0)>=5.5?'<div class="absolute -top-2 right-3 bg-gold text-black text-[10px] font-bold px-2 py-0.5 rounded-full">高回報</div>':''}
         ${(p.walk_min||0)<=3?'<div class="absolute -top-2 left-3 bg-good text-black text-[10px] font-bold px-2 py-0.5 rounded-full">駅近</div>':''}
         <div class="flex items-center justify-between mb-2"><span class="text-sm font-bold text-gold">${p.address||''}</span><span class="text-xs text-dim">${p.station||''} ${p.walk_min||0}分</span></div>
@@ -497,7 +522,11 @@ function showResults(results,query){
           ${riskBadge(p.disaster_tsunami||p.disaster?.tsunami||'low','津波')}
         </div>
         <div class="text-xs text-dim mt-2">${p.floor||0}階 / ${p.total_floors||0}階建 · ${p.land_rights||''} · <span class="font-semibold text-gold">${p.listing_role_label||'身份待確認'}</span></div>
-      </a>
+        <div class="grid grid-cols-2 gap-2 mt-3">
+          <a href="/listing/${p.id}" class="text-center border border-border rounded-lg px-3 py-2 text-xs font-bold text-gold no-underline">查看詳情</a>
+          <button onclick="addLocalToShortlist('${esc(p.id)}',this)" class="bg-gold text-black rounded-lg px-3 py-2 text-xs font-bold">${activeClient()?'加入 '+esc(activeClient().name):'加入客戶私藏'}</button>
+        </div>
+      </article>
     `).join('');
   }
   section.classList.remove('hidden');

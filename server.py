@@ -541,7 +541,8 @@ def all_listings():
         SELECT * FROM listings WHERE status='published'
         ORDER BY price DESC
     """).fetchall()
-    listings = [_row_to_dict(r) for r in results]
+    from property_search import filter_local_listings
+    listings = list(reversed(filter_local_listings([_row_to_dict(r) for r in results], "")))
     conn.close()
 
     # Add raw price fields for consistency
@@ -575,7 +576,8 @@ def listing_detail(listing_id):
     conn.close()
     if not row:
         return jsonify({'error': 'not found'}), 404
-    return jsonify(_row_to_dict(row))
+    from property_search import filter_local_listings
+    return jsonify(filter_local_listings([_row_to_dict(row)], "")[0])
 
 
 # ── Private Property Workbench API v1 ──

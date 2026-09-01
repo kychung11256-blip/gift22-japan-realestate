@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" class="dark">
+<html lang="ja">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -11,43 +11,44 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script>
-tailwind.config={theme:{extend:{fontFamily:{sans:['Geist','system-ui','sans-serif']},colors:{gold:{DEFAULT:'#e0b97a',light:'#f0d080',dark:'#c9973a',muted:'rgba(224,185,122,0.12)'},surface:{DEFAULT:'#0a0a0f',card:'#111118',elevated:'#16161f'},border:{DEFAULT:'#252538',subtle:'#1e1e30'},muted:'#888',dim:'#555',good:'#4ade80',warn:'#fbbf24',bad:'#f87171',info:'#60a5fa'}}}}
+tailwind.config={theme:{extend:{fontFamily:{sans:['Geist','system-ui','sans-serif']},colors:{gold:{DEFAULT:'#164d3d',light:'#23755b',dark:'#0f3f32',muted:'rgba(22,77,61,0.12)'},surface:{DEFAULT:'#f4f6f3',card:'#ffffff',elevated:'#edf1ee'},border:{DEFAULT:'#dfe7e3',subtle:'#e8eeeb'},muted:'#68776f',dim:'#7c8984',good:'#36a77b',warn:'#c88a38',bad:'#a9573c',info:'#4f7c70'}}}}
 </script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:#0a0a0f;color:#fff;font-family:'Geist',system-ui,sans-serif}
+body{background:#f4f6f3;color:#fff;font-family:'Geist',system-ui,sans-serif}
 #map{width:100%;height:calc(100vh - 56px)}
-.maplibregl-popup-content{background:#111118!important;color:#fff!important;border:1px solid #252538!important;border-radius:12px!important;padding:12px!important;font-family:'Geist',system-ui,sans-serif!important}
-.maplibregl-popup-tip{border-top-color:#111118!important}
-.maplibregl-popup-close-button{color:#888!important;font-size:16px!important}
-.layer-toggle{background:#111118;border:1px solid #252538;border-radius:8px;padding:6px 10px;cursor:pointer;font-size:11px;transition:all .15s;color:#888}
-.layer-toggle.active{border-color:#e0b97a;color:#e0b97a}
+.maplibregl-popup-content{background:#ffffff!important;color:#fff!important;border:1px solid #dfe7e3!important;border-radius:12px!important;padding:12px!important;font-family:'Geist',system-ui,sans-serif!important}
+.maplibregl-popup-tip{border-top-color:#ffffff!important}
+.maplibregl-popup-close-button{color:#68776f!important;font-size:16px!important}
+.layer-toggle{background:#ffffff;border:1px solid #dfe7e3;border-radius:8px;padding:6px 10px;cursor:pointer;font-size:11px;transition:all .15s;color:#68776f}
+.layer-toggle.active{border-color:#164d3d;color:#164d3d}
 .layer-toggle:disabled{opacity:0.5;cursor:not-allowed}
 /* ── Route planning mode ── */
-#routePanel{position:absolute;top:64px;right:8px;width:320px;max-height:calc(100vh - 140px);overflow-y:auto;background:#111118;border:1px solid #252538;border-radius:12px;padding:12px;z-index:10;display:none}
+#routePanel{position:absolute;top:64px;right:8px;width:320px;max-height:calc(100vh - 140px);overflow-y:auto;background:#ffffff;border:1px solid #dfe7e3;border-radius:12px;padding:12px;z-index:10;display:none}
 #routePanel.open{display:block}
-#routePanel h3{font-size:13px;font-weight:700;color:#e0b97a;margin-bottom:8px}
-.route-stop{display:flex;gap:8px;padding:8px;border:1px solid #252538;border-radius:8px;margin-bottom:6px;font-size:11px;align-items:flex-start}
-.route-stop.origin{border-color:#e0b97a;background:rgba(224,185,122,0.06)}
-.route-seq{flex:none;width:20px;height:20px;border-radius:50%;background:#e0b97a;color:#0a0a0f;font-weight:700;display:flex;align-items:center;justify-content:center;font-size:11px}
-.route-seq.origin-seq{background:#60a5fa}
-.route-leg{margin:2px 0 8px 28px;font-size:10px;color:#888;border-left:2px dashed #252538;padding-left:8px}
-.route-leg .traffic-tag{color:#4ade80;font-size:9px;margin-left:4px}
-#routeModeBtn.active{background:#e0b97a;color:#0a0a0f;border-color:#e0b97a}
-.route-total{margin-top:8px;padding:8px;background:#16161f;border-radius:8px;font-size:12px;color:#e0b97a;font-weight:600}
-.route-setup{padding:8px;border:1px solid #252538;border-radius:8px;margin-bottom:8px;background:#16161f}
-.route-setup label{display:block;font-size:10px;color:#888;margin-bottom:4px}
-.route-setup input,.route-setup select{width:100%;background:#0a0a0f;border:1px solid #252538;border-radius:8px;color:#fff;padding:6px 8px;font-size:11px;outline:none;margin-bottom:6px}
-.route-setup input:focus,.route-setup select:focus{border-color:#e0b97a}
+#routePanel h3{font-size:13px;font-weight:700;color:#164d3d;margin-bottom:8px}
+.route-stop{display:flex;gap:8px;padding:8px;border:1px solid #dfe7e3;border-radius:8px;margin-bottom:6px;font-size:11px;align-items:flex-start}
+.route-stop.origin{border-color:#164d3d;background:rgba(22,77,61,0.06)}
+.route-seq{flex:none;width:20px;height:20px;border-radius:50%;background:#164d3d;color:#f4f6f3;font-weight:700;display:flex;align-items:center;justify-content:center;font-size:11px}
+.route-seq.origin-seq{background:#4f7c70}
+.route-leg{margin:2px 0 8px 28px;font-size:10px;color:#68776f;border-left:2px dashed #dfe7e3;padding-left:8px}
+.route-leg .traffic-tag{color:#36a77b;font-size:9px;margin-left:4px}
+#routeModeBtn.active{background:#164d3d;color:#f4f6f3;border-color:#164d3d}
+.route-total{margin-top:8px;padding:8px;background:#edf1ee;border-radius:8px;font-size:12px;color:#164d3d;font-weight:600}
+.route-setup{padding:8px;border:1px solid #dfe7e3;border-radius:8px;margin-bottom:8px;background:#edf1ee}
+.route-setup label{display:block;font-size:10px;color:#68776f;margin-bottom:4px}
+.route-setup input,.route-setup select{width:100%;background:#f4f6f3;border:1px solid #dfe7e3;border-radius:8px;color:#fff;padding:6px 8px;font-size:11px;outline:none;margin-bottom:6px}
+.route-setup input:focus,.route-setup select:focus{border-color:#164d3d}
 .route-setup .row{display:flex;gap:6px}
 .route-setup .row>div{flex:1}
 .route-origin-btns{display:flex;gap:4px;margin-bottom:6px}
-.route-origin-btns button{flex:1;font-size:10px;padding:5px;border-radius:6px;border:1px solid #252538;background:#0a0a0f;color:#888;cursor:pointer}
-.route-origin-btns button:hover{border-color:#e0b97a;color:#e0b97a}
-.route-origin-ok{font-size:10px;color:#4ade80;margin-bottom:6px}
-#planRouteBtn{width:100%;padding:9px;border-radius:8px;border:none;background:#e0b97a;color:#0a0a0f;font-weight:700;font-size:12px;cursor:pointer;transition:opacity .2s}
+.route-origin-btns button{flex:1;font-size:10px;padding:5px;border-radius:6px;border:1px solid #dfe7e3;background:#f4f6f3;color:#68776f;cursor:pointer}
+.route-origin-btns button:hover{border-color:#164d3d;color:#164d3d}
+.route-origin-ok{font-size:10px;color:#36a77b;margin-bottom:6px}
+#planRouteBtn{width:100%;padding:9px;border-radius:8px;border:none;background:#164d3d;color:#f4f6f3;font-weight:700;font-size:12px;cursor:pointer;transition:opacity .2s}
 #planRouteBtn:disabled{opacity:.35;cursor:not-allowed}
 </style>
+<link rel="stylesheet" href="/vendor/workbench-theme.css">
 </head>
 <body>
 
@@ -62,7 +63,7 @@ body{background:#0a0a0f;color:#fff;font-family:'Geist',system-ui,sans-serif}
     <a href="/collection" class="text-xs text-gold hover:text-gold-light transition-colors duration-200">物件搜尋</a>
   </div>
   <div class="flex items-center gap-1.5 flex-wrap" id="layerToggles"></div>
-  <button id="routeModeBtn" class="layer-toggle" onclick="toggleRouteMode()" style="border-left:3px solid #4ade80">路線規劃</button>
+  <button id="routeModeBtn" class="layer-toggle" onclick="toggleRouteMode()" style="border-left:3px solid #36a77b">路線規劃</button>
 </div>
 <div id="map"></div>
 <div id="routePanel"></div>
@@ -70,7 +71,7 @@ body{background:#0a0a0f;color:#fff;font-family:'Geist',system-ui,sans-serif}
 <script>
 const DISASTER_COLORS={flood:'#FF6B35',storm_surge:'#FF4500',tsunami:'#1E90FF',landslide:'#FFD700'};
 const LAYER_DEFS=[
-  {id:'zoning',label:'用途地域',color:'#e0b97a'},
+  {id:'zoning',label:'用途地域',color:'#164d3d'},
   {id:'flood',label:'洪水',color:'#FF6B35'},
   {id:'storm_surge',label:'高潮',color:'#FF4500'},
   {id:'tsunami',label:'津波',color:'#1E90FF'},
@@ -102,10 +103,10 @@ async function loadMarkers(){
 
   map.addSource('listings',{type:'geojson',data});
   map.addLayer({id:'listing-markers',type:'circle',source:'listings',paint:{
-    'circle-radius':8,'circle-color':'#e0b97a','circle-stroke-width':3,'circle-stroke-color':'#0a0a0f',
+    'circle-radius':8,'circle-color':'#164d3d','circle-stroke-width':3,'circle-stroke-color':'#f4f6f3',
   }});
   map.addLayer({id:'listing-glow',type:'circle',source:'listings',paint:{
-    'circle-radius':14,'circle-color':'rgba(224,185,122,0.15)','circle-stroke-width':1,'circle-stroke-color':'rgba(224,185,122,0.3)',
+    'circle-radius':14,'circle-color':'rgba(22,77,61,0.15)','circle-stroke-width':1,'circle-stroke-color':'rgba(22,77,61,0.3)',
   }});
 
   const popup=new maplibregl.Popup({offset:28,closeButton:true,maxWidth:'280px'});
@@ -113,13 +114,13 @@ async function loadMarkers(){
     const p=e.features[0].properties;
     const coords=e.features[0].geometry.coordinates.slice();
     popup.setLngLat(coords).setHTML(
-      `<div style="font-size:11px;color:#888;margin-bottom:2px">${p.id}</div>
+      `<div style="font-size:11px;color:#68776f;margin-bottom:2px">${p.id}</div>
        <div style="font-size:14px;font-weight:700;margin-bottom:4px">${p.address}</div>
-       <div style="font-size:16px;font-weight:700;color:#e0b97a;margin-bottom:4px">${(p.price||0).toLocaleString()}万</div>
-       <div style="font-size:11px;color:#888">${p.room_layout||''} | ${p.type||''}</div>
-       ${p.station?`<div style="font-size:11px;color:#888">${p.station} ${p.walk_min}分</div>`:''}
-       ${p.mlit_use_district?`<div style="font-size:10px;color:#888;margin-top:2px">${p.mlit_use_district}</div>`:''}
-       <a href="/listing/${p.id}" style="display:inline-block;margin-top:6px;font-size:11px;color:#e0b97a;text-decoration:none;border-bottom:1px solid #e0b97a">詳細 →</a>`
+       <div style="font-size:16px;font-weight:700;color:#164d3d;margin-bottom:4px">${(p.price||0).toLocaleString()}万</div>
+       <div style="font-size:11px;color:#68776f">${p.room_layout||''} | ${p.type||''}</div>
+       ${p.station?`<div style="font-size:11px;color:#68776f">${p.station} ${p.walk_min}分</div>`:''}
+       ${p.mlit_use_district?`<div style="font-size:10px;color:#68776f;margin-top:2px">${p.mlit_use_district}</div>`:''}
+       <a href="/listing/${p.id}" style="display:inline-block;margin-top:6px;font-size:11px;color:#164d3d;text-decoration:none;border-bottom:1px solid #164d3d">詳細 →</a>`
     ).addTo(map);
   });
 
@@ -287,7 +288,7 @@ function updateSelectedGlow(){
   if(map.getLayer('route-selected-glow'))map.removeLayer('route-selected-glow');
   if(!ids.length)return;
   map.addLayer({id:'route-selected-glow',type:'circle',source:'listings',paint:{
-    'circle-radius':12,'circle-color':'#4ade80','circle-stroke-width':3,'circle-stroke-color':'#0a0a0f',
+    'circle-radius':12,'circle-color':'#36a77b','circle-stroke-width':3,'circle-stroke-color':'#f4f6f3',
   },filter:['in',['get','id'],['literal',ids]]});
 }
 window.updateSelectedGlow=updateSelectedGlow;
@@ -324,10 +325,10 @@ function drawRoute(d){
     const el=document.createElement('div');
     if(o.is_origin){
       // 出發點 marker — 藍色「出」
-      el.style.cssText='width:26px;height:26px;border-radius:50%;background:#60a5fa;color:#0a0a0f;font-weight:700;font-size:12px;display:flex;align-items:center;justify-content:center;border:2px solid #0a0a0f;box-shadow:0 0 10px rgba(96,165,250,0.7)';
+      el.style.cssText='width:26px;height:26px;border-radius:50%;background:#4f7c70;color:#f4f6f3;font-weight:700;font-size:12px;display:flex;align-items:center;justify-content:center;border:2px solid #f4f6f3;box-shadow:0 0 10px rgba(96,165,250,0.7)';
       el.textContent='出';
     }else{
-      el.style.cssText='width:24px;height:24px;border-radius:50%;background:#4ade80;color:#0a0a0f;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center;border:2px solid #0a0a0f;box-shadow:0 0 8px rgba(74,222,128,0.6)';
+      el.style.cssText='width:24px;height:24px;border-radius:50%;background:#36a77b;color:#f4f6f3;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center;border:2px solid #f4f6f3;box-shadow:0 0 8px rgba(35,117,91,0.6)';
       el.textContent=o.seq;
     }
     new maplibregl.Marker({element:el}).setLngLat([o.lon,o.lat]).addTo(map);
@@ -351,14 +352,14 @@ function renderRoutePanel(d){
     +'<button onclick="setOriginFromAddress()">🔍 用地址</button>'
     +'<button onclick="setOriginFromGeolocation()">📍 目前位置</button>'
     +'</div>'
-    +(routeGeoLoading?'<div style="font-size:10px;color:#e0b97a;margin-bottom:6px">定位/查詢中...</div>':'')
-    +(originOk?'<div class="route-origin-ok">✓ 出發點：'+routeOrigin.label+'</div>':'<div style="font-size:10px;color:#f87171;margin-bottom:6px">未設定出發點</div>')
+    +(routeGeoLoading?'<div style="font-size:10px;color:#164d3d;margin-bottom:6px">定位/查詢中...</div>':'')
+    +(originOk?'<div class="route-origin-ok">✓ 出發點：'+routeOrigin.label+'</div>':'<div style="font-size:10px;color:#a9573c;margin-bottom:6px">未設定出發點</div>')
     +'<div class="row">'
     +'<div><label>出發時間</label><select id="routeDepartSel"><option value="now">而家</option></select></div>'
     +'<div><label>路況模式</label><select id="routeTrafficSel"><option value="best_guess">best_guess</option><option value="pessimistic">pessimistic</option><option value="optimistic">optimistic</option></select></div>'
     +'</div>'
     +'<button id="planRouteBtn" onclick="planRoute()"'+(canPlanRoute()?'':' disabled')+'>規劃路線</button>'
-    +'<div style="font-size:9px;color:#555;margin-top:4px">'+(originOk?('已揀 '+selectedIds.size+' 個物件，撳地圖上嘅點加/減'):'先設定出發點，再撳地圖上嘅物件')+'</div>'
+    +'<div style="font-size:9px;color:#7c8984;margin-top:4px">'+(originOk?('已揀 '+selectedIds.size+' 個物件，撳地圖上嘅點加/減'):'先設定出發點，再撳地圖上嘅物件')+'</div>'
     +'</div>';
 
   if(!d){
@@ -370,9 +371,9 @@ function renderRoutePanel(d){
   let html='<h3>建議拜訪順序</h3>'+setupHtml;
   d.order.forEach((o,i)=>{
     if(o.is_origin){
-      html+=`<div class="route-stop origin"><div class="route-seq origin-seq">出</div><div><div style="font-weight:600">${o.address}</div><div style="color:#60a5fa;font-size:9px">出發點</div></div></div>`;
+      html+=`<div class="route-stop origin"><div class="route-seq origin-seq">出</div><div><div style="font-weight:600">${o.address}</div><div style="color:#4f7c70;font-size:9px">出發點</div></div></div>`;
     }else{
-      html+=`<div class="route-stop"><div class="route-seq">${o.seq}</div><div><div style="font-weight:600">${o.address}</div><div style="color:#888">${o.id} | ${o.price>10000000?Math.round(o.price/10000).toLocaleString():(o.price||0).toLocaleString()}万</div></div></div>`;
+      html+=`<div class="route-stop"><div class="route-seq">${o.seq}</div><div><div style="font-weight:600">${o.address}</div><div style="color:#68776f">${o.id} | ${o.price>10000000?Math.round(o.price/10000).toLocaleString():(o.price||0).toLocaleString()}万</div></div></div>`;
     }
     if(i<d.legs.length){
       const leg=d.legs[i];
@@ -380,7 +381,7 @@ function renderRoutePanel(d){
       html+=`<div class="route-leg">車程 ${mins} 分 (${leg.distance_km} km)<span class="traffic-tag">已包含實時路況預估</span></div>`;
     }
   });
-  html+=`<div class="route-total">總耗時 ${d.total_duration_min} 分（含實時路況）｜ 總距離 ${d.total_distance_km} km${d.cache_hit?'<div style="font-size:9px;color:#555;margin-top:2px">結果來自 6 小時快取</div>':''}</div>`;
+  html+=`<div class="route-total">總耗時 ${d.total_duration_min} 分（含實時路況）｜ 總距離 ${d.total_distance_km} km${d.cache_hit?'<div style="font-size:9px;color:#7c8984;margin-top:2px">結果來自 6 小時快取</div>':''}</div>`;
   panel.innerHTML=html;
   panel.classList.add('open');
 }

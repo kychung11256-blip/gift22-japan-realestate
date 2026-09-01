@@ -33,6 +33,7 @@ from db import get_db, init_db
 from suumo_scraper import scrape_and_insert
 from suumo_search import search as suumo_search, scrape_detail, import_to_db
 from workbench_api import filter_properties, property_stats, sort_properties, standardize_property
+from reins_photo_extractor import CONTROLLED_TEMP_ROOT, ExtractionError, confirm_candidates, preview_candidates
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB
@@ -159,6 +160,19 @@ def static_files(filename):
     if filename in public_files or filename.startswith(public_prefixes):
         return send_from_directory('.', filename)
     return jsonify({'error': 'not found'}), 404
+
+
+@app.route('/uploads/reins-extracted/_preview/<path:filename>')
+@_workbench_auth_required
+def serve_reins_extract_preview(filename):
+    return send_from_directory(CONTROLLED_TEMP_ROOT, filename)
+
+
+@app.route('/uploads/reins-extracted/<listing_id>/<path:filename>')
+def serve_reins_extracted_photo(listing_id, filename):
+    if not listing_id or '..' in listing_id or '/' in listing_id or filename.startswith('_preview/'):
+        return jsonify({'error': 'not found'}), 404
+    return send_from_directory(os.path.join(os.path.dirname(__file__), 'uploads', 'reins-extracted', listing_id), filename)
 
 # ── Drafts list API ──
 @app.route('/api/drafts')
@@ -578,6 +592,96 @@ def listing_detail(listing_id):
         return jsonify({'error': 'not found'}), 404
     from property_search import filter_local_listings
     return jsonify(filter_local_listings([_row_to_dict(row)], "")[0])
+
+
+def _json_load_list(value):
+    if isinstance(value, list):
+        return value
+    if not value:
+        return []
+    try:
+        parsed = json.loads(value)
+        return parsed if isinstance(parsed, list) else []
+    except Exception:
+        return []
+
+
+@app.route('/api/reins-photo-preview/<listing_id>', methods=['POST'])
+@_workbench_auth_required
+def reins_photo_preview(listing_id):
+    """Read-only DB endpoint: extract local REINS drawing-photo candidates."""
+    conn = get_db()
+    row = conn.execute(
+        "SELECT id, source, reins_drawing_pdf FROM listings WHERE id = ?",
+        (listing_id,),
+    ).fetchone()
+    conn.close()
+    if not row or row['source'] != 'reins':
+        return jsonify({'code': 0, 'error': 'REINS listing not found'}), 404
+    if not row['reins_drawing_pdf']:
+        return jsonify({'code': 0, 'error': 'REINS drawing PDF not found'}), 404
+    try:
+        result = preview_candidates(row['id'], row['reins_drawing_pdf'])
+        return jsonify(result)
+    except ExtractionError as e:
+        return jsonify({'code': 0, 'error': str(e)}), e.status
+    except Exception as e:
+        return jsonify({'code': 0, 'error': f'REINS photo extraction failed: {e}'}), 500
+
+
+@app.route('/api/reins-photo-confirm/<listing_id>', methods=['POST'])
+@_workbench_auth_required
+def reins_photo_confirm(listing_id):
+    """Persist selected preview candidates into listing.interior_photos[]."""
+    data = request.get_json(silent=True) or {}
+    selections = data.get('candidates') or data.get('selections') or []
+    if not isinstance(selections, list):
+        return jsonify({'code': 0, 'error': 'candidates must be a list'}), 400
+
+    conn = get_db()
+    row = conn.execute(
+        "SELECT id, source, reins_drawing_pdf, interior_photos FROM listings WHERE id = ?",
+        (listing_id,),
+    ).fetchone()
+    if not row or row['source'] != 'reins':
+        conn.close()
+        return jsonify({'code': 0, 'error': 'REINS listing not found'}), 404
+    if not row['reins_drawing_pdf']:
+        conn.close()
+        return jsonify({'code': 0, 'error': 'REINS drawing PDF not found'}), 404
+
+    try:
+        saved, selected_count = confirm_candidates(row['id'], row['reins_drawing_pdf'], selections)
+        existing = _json_load_list(row['interior_photos'])
+        seen_urls = {p.get('url') if isinstance(p, dict) else str(p) for p in existing}
+        added = []
+        for entry in saved:
+            if entry['url'] in seen_urls:
+                continue
+            existing.append(entry)
+            seen_urls.add(entry['url'])
+            added.append(entry)
+        if added:
+            conn.execute(
+                "UPDATE listings SET interior_photos=?, updated_at=? WHERE id=?",
+                (json.dumps(existing, ensure_ascii=False), datetime.now(timezone.utc).isoformat(), row['id']),
+            )
+            conn.commit()
+        conn.close()
+        return jsonify({
+            'code': 1,
+            'selected': selected_count,
+            'confirmed': len(added),
+            'total': len(existing),
+            'photos': added,
+            'idempotent_skipped': selected_count - len(added),
+        })
+    except ExtractionError as e:
+        conn.close()
+        return jsonify({'code': 0, 'error': str(e)}), e.status
+    except Exception as e:
+        conn.close()
+        return jsonify({'code': 0, 'error': f'REINS photo confirmation failed: {e}'}), 500
 
 
 # ── Private Property Workbench API v1 ──

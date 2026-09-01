@@ -5,7 +5,7 @@ import pytest
 
 import db
 import server
-from viewing_planner import ViewingPlanError, nearest_neighbor_order, optimize_transit
+from viewing_planner import ViewingPlanError, decode_polyline, geometry_bounds, nearest_neighbor_order, optimize_driving, optimize_transit
 
 
 def auth_header():
@@ -54,7 +54,20 @@ def mocked_route(origin, stops, departure, duration, google_get=None, optimize_w
     return {
         "provider": "mock_google_directions",
         "heuristic": "provider_waypoint_optimization" if optimize_waypoints else "manual_order_recalculation",
+        "routeGeometry": {"type": "LineString", "coordinates": [[origin["lon"], origin["lat"]]] + [[s["lon"], s["lat"]] for s in ordered]},
+        "routeBounds": [min([origin["lon"]]+[s["lon"] for s in ordered]), min([origin["lat"]]+[s["lat"] for s in ordered]), max([origin["lon"]]+[s["lon"] for s in ordered]), max([origin["lat"]]+[s["lat"] for s in ordered])],
         **build_schedule([origin] + ordered, minutes, departure, duration, "driving", end_location=end_location),
+    }
+
+
+def google_directions_response(polyline="_p~iF~ps|U_ulLnnqC_mqNvxq`@"):
+    return {
+        "status": "OK",
+        "routes": [{
+            "waypoint_order": [],
+            "overview_polyline": {"points": polyline},
+            "legs": [{"duration": {"value": 600}, "duration_in_traffic": {"value": 720}}],
+        }],
     }
 
 
@@ -121,6 +134,53 @@ def test_deterministic_transit_heuristic_and_provider_failure_no_fabrication():
     assert "唔會估算" in exc.value.message
 
 
+def test_driving_polyline_decoding_and_geometry_serialization(monkeypatch):
+    coords = decode_polyline("_p~iF~ps|U_ulLnnqC_mqNvxq`@")
+    assert coords == [[-120.2, 38.5], [-120.95, 40.7], [-126.453, 43.252]]
+    monkeypatch.setattr('viewing_planner.GOOGLE_MAPS_API_KEY', 'configured-for-test')
+    origin = {"lat": 38.5, "lon": -120.2, "label": "start"}
+    stops = [{"id": "A", "listingId": "A", "lat": 40.7, "lon": -120.95}]
+    result = optimize_driving(origin, stops, server.datetime.now(server.timezone.utc), 45, google_get=lambda url: google_directions_response(), optimize_waypoints=False)
+    assert result["routeGeometry"]["type"] == "LineString"
+    assert len(result["routeGeometry"]["coordinates"]) == 3
+    assert result["routeBounds"] == geometry_bounds(result["routeGeometry"])
+    assert result.get("warnings") == []
+
+
+def test_transit_multileg_geometry_and_unavailable_warning(monkeypatch):
+    monkeypatch.setattr('viewing_planner.GOOGLE_MAPS_API_KEY', 'configured-for-test')
+    origin = {"lat": 35.0, "lon": 139.0, "label": "start"}
+    stops = [
+        {"id": "A", "listingId": "A", "lat": 35.1, "lon": 139.1},
+        {"id": "B", "listingId": "B", "lat": 35.2, "lon": 139.2},
+    ]
+    calls = []
+    def fake_get(url):
+        calls.append(url)
+        if 'distancematrix' in url:
+            return {"status": "OK", "rows": [
+                {"elements": [{"status":"OK","duration":{"value":0}}, {"status":"OK","duration":{"value":600}}, {"status":"OK","duration":{"value":900}}]},
+                {"elements": [{"status":"OK","duration":{"value":600}}, {"status":"OK","duration":{"value":0}}, {"status":"OK","duration":{"value":500}}]},
+                {"elements": [{"status":"OK","duration":{"value":900}}, {"status":"OK","duration":{"value":500}}, {"status":"OK","duration":{"value":0}}]},
+            ]}
+        return google_directions_response()
+    monkeypatch.setattr('viewing_planner._google_get', fake_get)
+    res = optimize_transit(origin, stops, server.datetime.now(server.timezone.utc), 45, matrix_provider=None, manual_order=True)
+    assert res["routeGeometry"]["type"] == "MultiLineString"
+    assert len(res["routeGeometry"]["coordinates"]) == 2
+    assert len([u for u in calls if 'directions' in u]) == 2
+
+    monkeypatch.setattr('viewing_planner._geometry_cache', {})
+    def no_geom(url):
+        if 'distancematrix' in url:
+            return fake_get(url)
+        return {"status": "ZERO_RESULTS", "routes": []}
+    monkeypatch.setattr('viewing_planner._google_get', no_geom)
+    res2 = optimize_transit(origin, stops, server.datetime.now(server.timezone.utc), 45, matrix_provider=None, manual_order=True)
+    assert not res2.get("routeGeometry")
+    assert "不會畫假路線" in res2["warnings"][0]["message"]
+
+
 def test_save_reopen_share_revocation_regeneration_and_no_status_mutation(app_client, monkeypatch):
     monkeypatch.setattr(server, "optimize_driving", mocked_route)
     headers = auth_header()
@@ -130,6 +190,7 @@ def test_save_reopen_share_revocation_regeneration_and_no_status_mutation(app_cl
     optimized = app_client.post("/api/v1/viewing-plans/optimize", headers=headers, json=payload()).get_json()
     assert optimized["stops"][0]["listingId"] == "L2"
     assert optimized["stops"][0]["travelMinutes"] == 10
+    assert optimized["routeGeometry"]["type"] == "LineString"
 
     manual_body = payload()
     manual_body["manualOrder"] = ["L1", "L2"]
@@ -137,6 +198,8 @@ def test_save_reopen_share_revocation_regeneration_and_no_status_mutation(app_cl
     manual = app_client.post("/api/v1/viewing-plans/optimize", headers=headers, json=manual_body).get_json()
     assert manual["stops"][0]["listingId"] == "L1"
     assert manual["heuristic"] == "manual deterministic staging validation"
+    assert manual.get("routeGeometry") is None
+    assert "不會畫假路線" in json.dumps(manual["warnings"], ensure_ascii=False)
 
     manual_provider_body = payload()
     manual_provider_body["manualOrder"] = ["L1", "L2"]
@@ -155,6 +218,7 @@ def test_save_reopen_share_revocation_regeneration_and_no_status_mutation(app_cl
     reopened = app_client.get(f"/api/v1/viewing-plans/{plan['id']}", headers=headers).get_json()["plan"]
     assert reopened["title"] == "測試睇樓路線"
     assert len(reopened["stops"]) == 2
+    assert reopened["routeGeometry"]["type"] == "LineString"
 
     token = plan["shareUrl"].split("/")[-1]
     share_api = app_client.get(f"/api/share/viewing/{token}")

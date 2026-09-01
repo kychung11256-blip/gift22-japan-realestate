@@ -141,6 +141,8 @@ def init_db():
             heuristic TEXT DEFAULT '',
             warnings TEXT DEFAULT '[]',
             totals TEXT DEFAULT '{}',
+            route_geometry TEXT DEFAULT '{}',
+            route_bounds TEXT DEFAULT '[]',
             share_token TEXT UNIQUE,
             share_revoked_at TEXT DEFAULT '',
             created_at TEXT DEFAULT (datetime('now')),
@@ -198,6 +200,14 @@ def init_db():
             ('orientation_confidence', "ALTER TABLE listings ADD COLUMN orientation_confidence REAL DEFAULT 0"),
         ):
             if col not in existing_cols:
+                conn.execute(ddl)
+                conn.commit()
+        viewing_cols = {r[1] for r in conn.execute("PRAGMA table_info(viewing_plans)").fetchall()}
+        for col, ddl in (
+            ('route_geometry', "ALTER TABLE viewing_plans ADD COLUMN route_geometry TEXT DEFAULT '{}'"),
+            ('route_bounds', "ALTER TABLE viewing_plans ADD COLUMN route_bounds TEXT DEFAULT '[]'"),
+        ):
+            if col not in viewing_cols:
                 conn.execute(ddl)
                 conn.commit()
     except Exception as e:

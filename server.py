@@ -100,6 +100,11 @@ def listings_page():
 def workbench_page():
     return send_from_directory('.', 'workbench.html')
 
+@app.route('/workbench/viewing-planner')
+@_workbench_auth_required
+def viewing_planner_page():
+    return send_from_directory('.', 'viewing_planner.html')
+
 # ── Agent Platform Proxy ────────────────────────────────────────
 import urllib.request as _urllib_req
 import urllib.error as _urllib_err
@@ -155,6 +160,7 @@ def static_files(filename):
     public_files = {
         'index.html', 'upload.html', 'review.html', 'mysok_import.html',
         'map.html', 'collection.html', 'listings.html', 'listing.html',
+        'viewing_route_map.js',
     }
     public_prefixes = ('vendor/', 'config/', 'uploads/reins/', 'uploads/thumbs/')
     if filename in public_files or filename.startswith(public_prefixes):
@@ -2491,7 +2497,7 @@ def _row_to_dict(row):
 from viewing_planner import (
     ALLOWED_DURATIONS, ALLOWED_MODES, ViewingPlanError, coord, make_share_token,
     optimize_driving, optimize_transit, parse_date_time, parse_iso, public_property,
-    validate_stop_count,
+    validate_stop_count, geometry_bounds,
 )
 
 
@@ -2544,6 +2550,14 @@ def _load_plan(plan_id=None, token=None, include_revoked=False, public=False):
         })
     totals = json.loads(plan['totals'] or '{}')
     warnings = json.loads(plan['warnings'] or '[]')
+    try:
+        route_geometry = json.loads(plan['route_geometry'] or '{}')
+    except Exception:
+        route_geometry = {}
+    try:
+        route_bounds = json.loads(plan['route_bounds'] or '[]')
+    except Exception:
+        route_bounds = []
     result = {
         'id': plan['id'],
         'clientId': plan['client_id'],
@@ -2559,6 +2573,8 @@ def _load_plan(plan_id=None, token=None, include_revoked=False, public=False):
         'heuristic': plan['heuristic'],
         'warnings': warnings,
         'totals': totals,
+        'routeGeometry': route_geometry if route_geometry else None,
+        'routeBounds': route_bounds,
         'stops': stops,
         'shareUrl': f"/share/viewing/{plan['share_token']}" if plan['share_token'] and not plan['share_revoked_at'] else '',
         'shareRevokedAt': plan['share_revoked_at'] or '',
@@ -2657,10 +2673,14 @@ def _optimize_payload(data):
         if len(vals) != expected:
             raise ViewingPlanError('mockDurations 數量必須等於 stops（如有終點則加一）；只可於 isolated staging 驗證使用', 400)
         result = {'provider': 'mock_staging_matrix', 'heuristic': 'manual deterministic staging validation', **__import__('viewing_planner').build_schedule([origin] + stops, vals, departure, duration, mode, end_location=end_location)}
+        result['warnings'] = [{'message': 'mockDurations 只提供驗證時間，不提供 route geometry；不會畫假路線。'}]
     elif mode == 'driving':
         result = optimize_driving(origin, stops, departure, duration, optimize_waypoints=not bool(manual_order), end_location=end_location)
     else:
         result = optimize_transit(origin, stops, departure, duration, manual_order=bool(manual_order))
+    provider_warnings = result.get('warnings') or []
+    route_geometry = result.get('routeGeometry')
+    route_bounds = result.get('routeBounds') or geometry_bounds(route_geometry)
     result.update({
         'code': 1,
         'clientId': client_id,
@@ -2669,7 +2689,9 @@ def _optimize_payload(data):
         'viewingDurationMin': duration,
         'start': origin,
         'end': end,
-        'warnings': warnings,
+        'warnings': warnings + provider_warnings,
+        'routeGeometry': route_geometry,
+        'routeBounds': route_bounds,
         'listingIds': [s['listingId'] for s in result['stops']],
     })
     return result
@@ -2706,14 +2728,16 @@ def v1_viewing_plans():
         now = datetime.now(timezone.utc).isoformat()
         title = str(data.get('title') or f"{viewing_date} 智慧睇樓路線").strip()[:160]
         totals = {'totalTravelMinutes': optimized['totalTravelMinutes'], 'totalItineraryMinutes': optimized['totalItineraryMinutes'], 'finishAt': optimized['finishAt']}
+        route_geometry = optimized.get('routeGeometry') or {}
+        route_bounds = optimized.get('routeBounds') or geometry_bounds(route_geometry)
         conn = get_db()
         existing = conn.execute('SELECT share_token FROM viewing_plans WHERE id=?', (plan_id,)).fetchone()
         token = existing['share_token'] if existing and existing['share_token'] else make_share_token()
         conn.execute("""
-            INSERT INTO viewing_plans (id, client_id, title, travel_mode, viewing_date, departure_at, start_label, start_lat, start_lon, end_label, end_lat, end_lon, viewing_duration_min, provider, heuristic, warnings, totals, share_token, updated_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-            ON CONFLICT(id) DO UPDATE SET title=excluded.title, travel_mode=excluded.travel_mode, viewing_date=excluded.viewing_date, departure_at=excluded.departure_at, start_label=excluded.start_label, start_lat=excluded.start_lat, start_lon=excluded.start_lon, end_label=excluded.end_label, end_lat=excluded.end_lat, end_lon=excluded.end_lon, viewing_duration_min=excluded.viewing_duration_min, provider=excluded.provider, heuristic=excluded.heuristic, warnings=excluded.warnings, totals=excluded.totals, updated_at=excluded.updated_at
-        """, (plan_id, client_id, title, mode, viewing_date, optimized['departureAt'], origin['label'], origin['lat'], origin['lon'], end['label'], end['lat'], end['lon'], duration, optimized.get('provider',''), optimized.get('heuristic',''), json.dumps(optimized.get('warnings', []), ensure_ascii=False), json.dumps(totals, ensure_ascii=False), token, now))
+            INSERT INTO viewing_plans (id, client_id, title, travel_mode, viewing_date, departure_at, start_label, start_lat, start_lon, end_label, end_lat, end_lon, viewing_duration_min, provider, heuristic, warnings, totals, route_geometry, route_bounds, share_token, updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(id) DO UPDATE SET title=excluded.title, travel_mode=excluded.travel_mode, viewing_date=excluded.viewing_date, departure_at=excluded.departure_at, start_label=excluded.start_label, start_lat=excluded.start_lat, start_lon=excluded.start_lon, end_label=excluded.end_label, end_lat=excluded.end_lat, end_lon=excluded.end_lon, viewing_duration_min=excluded.viewing_duration_min, provider=excluded.provider, heuristic=excluded.heuristic, warnings=excluded.warnings, totals=excluded.totals, route_geometry=excluded.route_geometry, route_bounds=excluded.route_bounds, updated_at=excluded.updated_at
+        """, (plan_id, client_id, title, mode, viewing_date, optimized['departureAt'], origin['label'], origin['lat'], origin['lon'], end['label'], end['lat'], end['lon'], duration, optimized.get('provider',''), optimized.get('heuristic',''), json.dumps(optimized.get('warnings', []), ensure_ascii=False), json.dumps(totals, ensure_ascii=False), json.dumps(route_geometry, ensure_ascii=False), json.dumps(route_bounds, ensure_ascii=False), token, now))
         conn.execute('DELETE FROM viewing_plan_stops WHERE plan_id=?', (plan_id,))
         for stop in optimized['stops']:
             conn.execute("""

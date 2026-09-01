@@ -1,0 +1,119 @@
+{
+  "base_url": "http://127.0.0.1:8901",
+  "client_id": "CL-5240AD6D83C7",
+  "before": {
+    "listings": 26,
+    "clients": 2,
+    "shortlists": 5,
+    "viewing_plans": 8,
+    "viewing_plan_stops": 19
+  },
+  "console_errors": [],
+  "screenshots": {
+    "before_workbench": "/home/ubuntu/ai-team/viewing-route-planner-worktree/verify_screenshots/viewing_before_workbench.png",
+    "desktop_planner_initial": "/home/ubuntu/ai-team/viewing-route-planner-worktree/verify_screenshots/viewing_planner_fullscreen_desktop.png",
+    "desktop_optimized": "/home/ubuntu/ai-team/viewing-route-planner-worktree/verify_screenshots/viewing_route_real_map_optimized_desktop.png",
+    "desktop_saved_reopen": "/home/ubuntu/ai-team/viewing-route-planner-worktree/verify_screenshots/viewing_route_saved_reopen_desktop.png",
+    "share_page_map": "/home/ubuntu/ai-team/viewing-route-planner-worktree/verify_screenshots/viewing_share_real_map_desktop.png",
+    "mobile_planner_map": "/home/ubuntu/ai-team/viewing-route-planner-worktree/verify_screenshots/viewing_planner_fullscreen_mobile.png"
+  },
+  "noted_non_blocking_404s": [
+    "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+    "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+    "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+    "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+    "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+    "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+    "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+    "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+    "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+    "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+    "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+    "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+    "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+    "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+    "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+    "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+    "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+    "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+    "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+    "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+    "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+    "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+    "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+    "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+    "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+    "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+    "Failed to load resource: the server responded with a status of 404 (NOT FOUND)"
+  ],
+  "selected_initial": 3,
+  "share_url": "/share/viewing/o3MhNVdl2qPZV4UHRASHZZLtkc-iT4a7qTToa4-vWVE",
+  "diagnostics": {
+    "initial": {
+      "map": {
+        "loaded": false,
+        "canvasWidth": 692,
+        "canvasHeight": 808,
+        "hasRouteLayer": false,
+        "hasRouteSource": false,
+        "markerCount": 0,
+        "loadError": ""
+      },
+      "errors": [],
+      "plan": null
+    },
+    "optimized": {
+      "map": {
+        "loaded": false,
+        "canvasWidth": 692,
+        "canvasHeight": 808,
+        "hasRouteLayer": true,
+        "hasRouteSource": true,
+        "markerCount": 4,
+        "loadError": ""
+      },
+      "errors": [],
+      "plan": {
+        "stops": 3,
+        "hasGeometry": true
+      }
+    },
+    "reopen": {
+      "map": {
+        "loaded": false,
+        "canvasWidth": 692,
+        "canvasHeight": 808,
+        "hasRouteLayer": true,
+        "hasRouteSource": true,
+        "markerCount": 4,
+        "loadError": ""
+      },
+      "errors": [],
+      "plan": {
+        "stops": 3,
+        "hasGeometry": true
+      }
+    },
+    "share": {
+      "map": {
+        "loaded": true,
+        "canvasWidth": 1063,
+        "canvasHeight": 412,
+        "hasRouteLayer": true,
+        "hasRouteSource": true,
+        "markerCount": 4,
+        "loadError": ""
+      },
+      "errors": [],
+      "hasGeometry": true,
+      "stops": 3
+    }
+  },
+  "after": {
+    "listings": 26,
+    "clients": 2,
+    "shortlists": 5,
+    "viewing_plans": 9,
+    "viewing_plan_stops": 22
+  }
+}

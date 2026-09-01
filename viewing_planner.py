@@ -22,6 +22,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
 GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY", "")
+_geometry_cache: dict[str, dict[str, Any]] = {}
 
 ALLOWED_DURATIONS = {30, 45, 60}
 ALLOWED_MODES = {"driving", "transit"}
@@ -120,6 +121,82 @@ def nav_url(origin: dict[str, Any], dest: dict[str, Any], mode: str) -> str:
     })
 
 
+def decode_polyline(encoded: str) -> list[list[float]]:
+    """Decode Google's encoded polyline into GeoJSON [lng, lat] coordinates."""
+    if not encoded:
+        return []
+    points: list[list[float]] = []
+    index = lat = lng = 0
+    while index < len(encoded):
+        deltas = []
+        for _ in range(2):
+            result = shift = 0
+            while True:
+                if index >= len(encoded):
+                    raise ViewingPlanError("Google polyline 格式不完整；不會建立假 geometry。", 502, "PROVIDER_ERROR")
+                b = ord(encoded[index]) - 63
+                index += 1
+                result |= (b & 0x1F) << shift
+                shift += 5
+                if b < 0x20:
+                    break
+            deltas.append(~(result >> 1) if (result & 1) else (result >> 1))
+        lat += deltas[0]
+        lng += deltas[1]
+        points.append([lng / 1e5, lat / 1e5])
+    return points
+
+
+def _flatten_geometry(geometry: dict[str, Any]) -> list[list[float]]:
+    if not geometry:
+        return []
+    if geometry.get("type") == "LineString":
+        return geometry.get("coordinates") or []
+    if geometry.get("type") == "MultiLineString":
+        return [c for line in (geometry.get("coordinates") or []) for c in line]
+    if geometry.get("type") == "Feature":
+        return _flatten_geometry(geometry.get("geometry") or {})
+    if geometry.get("type") == "FeatureCollection":
+        return [c for f in (geometry.get("features") or []) for c in _flatten_geometry(f.get("geometry") or {})]
+    return []
+
+
+def geometry_bounds(geometry: dict[str, Any] | None) -> list[float]:
+    coords = [c for c in _flatten_geometry(geometry or {}) if isinstance(c, list) and len(c) >= 2]
+    if not coords:
+        return []
+    xs = [float(c[0]) for c in coords]
+    ys = [float(c[1]) for c in coords]
+    return [min(xs), min(ys), max(xs), max(ys)]
+
+
+def _directions_geometry(origin: dict[str, Any], destination: dict[str, Any], mode: str, departure: datetime, google_get: Callable[[str], dict[str, Any]] | None = None) -> dict[str, Any] | None:
+    if not GOOGLE_MAPS_API_KEY:
+        return None
+    google_get = google_get or _google_get
+    key = f"{mode}|{round(float(origin['lat']),5)},{round(float(origin['lon']),5)}|{round(float(destination['lat']),5)},{round(float(destination['lon']),5)}|{int(departure.timestamp())//21600}"
+    if key in _geometry_cache:
+        return _geometry_cache[key]
+    params = {
+        "origin": f"{origin['lat']},{origin['lon']}",
+        "destination": f"{destination['lat']},{destination['lon']}",
+        "mode": mode,
+        "departure_time": str(int(departure.timestamp())),
+        "language": "zh-TW",
+        "key": GOOGLE_MAPS_API_KEY,
+    }
+    url = "https://maps.googleapis.com/maps/api/directions/json?" + urllib.parse.urlencode(params, safe="|,:")
+    g = google_get(url)
+    if g.get("status") != "OK" or not g.get("routes"):
+        return None
+    overview = (g["routes"][0].get("overview_polyline") or {}).get("points") or ""
+    coords = decode_polyline(overview) if overview else []
+    geom = {"type": "LineString", "coordinates": coords} if coords else None
+    if geom:
+        _geometry_cache[key] = geom
+    return geom
+
+
 def build_schedule(order: list[dict[str, Any]], leg_minutes: list[int], departure: datetime, duration_min: int, mode: str, end_location: dict[str, Any] | None = None) -> dict[str, Any]:
     stops = []
     current = departure
@@ -213,8 +290,19 @@ def optimize_driving(origin: dict[str, Any], stops: list[dict[str, Any]], depart
         if not sec:
             raise ViewingPlanError("Google Directions 未提供某段行車時間，已停止，唔會估算。", 502, "PROVIDER_ERROR")
         leg_minutes.append(math.ceil(sec / 60))
+    overview = (route.get("overview_polyline") or {}).get("points") or ""
+    coords = decode_polyline(overview) if overview else []
+    route_geometry = {"type": "LineString", "coordinates": coords} if coords else None
     heuristic = "provider_waypoint_optimization" if optimize_waypoints else "manual_order_recalculation"
-    return {"provider": "google_directions", "heuristic": heuristic, **build_schedule([origin] + ordered, leg_minutes, departure, duration_min, "driving", end_location=end_location)}
+    result = {"provider": "google_directions", "heuristic": heuristic, **build_schedule([origin] + ordered, leg_minutes, departure, duration_min, "driving", end_location=end_location)}
+    warnings = []
+    if route_geometry:
+        result["routeGeometry"] = route_geometry
+        result["routeBounds"] = geometry_bounds(route_geometry)
+    else:
+        warnings.append({"message": "Google Directions 未提供路線 geometry；只顯示真實地圖及 markers，不會畫假路線。"})
+    result["warnings"] = warnings
+    return result
 
 
 def nearest_neighbor_order(matrix: list[list[int]], count: int) -> list[int]:
@@ -270,7 +358,29 @@ def optimize_transit(origin: dict[str, Any], stops: list[dict[str, Any]], depart
         leg_minutes.append(math.ceil(matrix[cur][node] / 60))
         cur = node
     heuristic = "manual_order_recalculation" if manual_order else "nearest-neighbour + deterministic 2-opt over time-aware transit matrix"
-    return {"provider": "google_distance_matrix", "heuristic": heuristic, **build_schedule([origin] + ordered, leg_minutes, departure, duration_min, "transit")}
+    result = {"provider": "google_distance_matrix", "heuristic": heuristic, **build_schedule([origin] + ordered, leg_minutes, departure, duration_min, "transit")}
+    warnings = []
+    if matrix_provider is None and GOOGLE_MAPS_API_KEY:
+        lines = []
+        prev = origin
+        for stop in ordered:
+            try:
+                geom = _directions_geometry(prev, stop, "transit", departure)
+                if geom and geom.get("coordinates"):
+                    lines.append(geom["coordinates"])
+            except Exception:
+                pass
+            prev = stop
+        if lines:
+            route_geometry = {"type": "MultiLineString", "coordinates": lines}
+            result["routeGeometry"] = route_geometry
+            result["routeBounds"] = geometry_bounds(route_geometry)
+        else:
+            warnings.append({"message": "公共交通 provider 未提供路線 geometry；只顯示真實地圖及 markers，不會畫假路線。"})
+    else:
+        warnings.append({"message": "測試／自訂 transit provider 未提供路線 geometry；不會畫假路線。"})
+    result["warnings"] = warnings
+    return result
 
 
 def google_transit_matrix(origin: dict[str, Any], stops: list[dict[str, Any]], departure: datetime) -> list[list[int]]:

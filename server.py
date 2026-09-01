@@ -242,7 +242,8 @@ def search():
             SELECT * FROM listings WHERE status='published'
             ORDER BY price DESC LIMIT 8
         """).fetchall()
-        listings = [_row_to_dict(row) for row in rows]
+        from property_search import filter_local_listings
+        listings = filter_local_listings([_row_to_dict(row) for row in rows], "")
         conn.close()
         return jsonify({'count': len(listings), 'listings': listings, 'constraints': {}})
 
@@ -2230,6 +2231,18 @@ def _row_to_dict(row):
 
 # ── Route planning (Google Maps Directions API) ──
 GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY", "")
+
+@app.route('/api/map-status')
+def map_status():
+    """Expose map capability state without returning credentials."""
+    return jsonify({
+        "code": 1,
+        "baseMap": True,
+        "routeConfigured": bool(GOOGLE_MAPS_API_KEY),
+        "hazardLayersConfigured": bool(os.environ.get("REINFOLIB_API_KEY", "")),
+        "apiBase": request.host_url.rstrip("/"),
+    })
+
 _route_cache = {}
 ROUTE_CACHE_TTL = 21600  # 6 hours
 

@@ -28,7 +28,8 @@ from zoneinfo import ZoneInfo
 
 GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY", "")
 JAPAN_TZ = ZoneInfo("Asia/Tokyo")
-_geometry_cache: dict[str, dict[str, Any]] = {}\n_transit_route_cache: dict[str, dict[str, Any]] = {}
+_geometry_cache: dict[str, dict[str, Any]] = {}
+_transit_route_cache: dict[str, dict[str, Any]] = {}
 
 ALLOWED_DURATIONS = {30, 45, 60}
 ALLOWED_MODES = {"driving", "transit"}

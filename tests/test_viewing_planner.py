@@ -197,6 +197,7 @@ def test_google_routes_matrix_parsing_transit_geometry_and_element_failure(monke
             ]
         return {}
     monkeypatch.setattr('viewing_planner._google_routes_post', bad_matrix)
+    viewing_planner._transit_route_cache.clear()
     with pytest.raises(ViewingPlanError) as exc:
         google_transit_matrix(origin, stops[:1], server.datetime.now(server.timezone.utc))
     assert exc.value.code in {"PROVIDER_UNSUPPORTED_ROUTE", "PROVIDER_ERROR"}

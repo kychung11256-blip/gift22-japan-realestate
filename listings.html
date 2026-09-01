@@ -281,7 +281,8 @@ function renderCards(listings) {
           <div class="flex items-center gap-2 text-[10px]">
             <span class="px-2 py-0.5 rounded-full bg-info/10 text-info">${l.structure||'--'}</span>
             ${l.age ? `<span class="px-2 py-0.5 rounded-full bg-warn/10 text-warn">築${l.age}年</span>` : ''}
-            <span class="px-2 py-0.5 rounded-full bg-good/10 text-good">${l.yield_surface||0}%</span>
+            <span class="px-2 py-0.5 rounded-full bg-good/10 text-good">${l.effective_orientation||'朝向待確認'}</span>
+            <span class="px-2 py-0.5 rounded-full bg-gold/10 text-gold">${l.listing_role_label||'身份待確認'}</span>
           </div>
         </div>
       </a>

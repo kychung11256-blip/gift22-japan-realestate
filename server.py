@@ -3,9 +3,10 @@ Flask backend for Johnny AI Platform.
 JSON API: search, detail, upload, confirm, dashboard stats.
 """
 
-import os, sys, json, uuid, random, threading, time, urllib.request, gzip as _gzip_mod
+import os, sys, json, uuid, random, threading, time, urllib.request, gzip as _gzip_mod, hmac
 from datetime import datetime, timezone
-from flask import Flask, jsonify, request, send_from_directory
+from functools import wraps
+from flask import Flask, jsonify, request, send_from_directory, Response
 
 # Load .env file manually if present
 env_path = os.path.join(os.path.dirname(__file__), '.env')
@@ -31,9 +32,36 @@ sys.path.insert(0, os.path.dirname(__file__))
 from db import get_db, init_db
 from suumo_scraper import scrape_and_insert
 from suumo_search import search as suumo_search, scrape_detail, import_to_db
+from workbench_api import filter_properties, property_stats, sort_properties, standardize_property
+from reins_photo_extractor import CONTROLLED_TEMP_ROOT, ExtractionError, confirm_candidates, preview_candidates
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB
+
+
+def _workbench_auth_required(view):
+    """Fail-closed HTTP Basic protection for the private workbench and v1 API."""
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        expected_user = os.environ.get('WORKBENCH_USER', 'johnny')
+        expected_password = os.environ.get('WORKBENCH_PASSWORD', '')
+        if not expected_password:
+            return Response('Property workbench is not configured.', status=503)
+
+        auth = request.authorization
+        valid = bool(
+            auth
+            and hmac.compare_digest(auth.username or '', expected_user)
+            and hmac.compare_digest(auth.password or '', expected_password)
+        )
+        if not valid:
+            return Response(
+                'Authentication required.',
+                status=401,
+                headers={'WWW-Authenticate': 'Basic realm="Gift22 Property Workbench"'},
+            )
+        return view(*args, **kwargs)
+    return wrapped
 
 # ── Inject venv via WSGI on startup ──
 # (Not needed when running via .venv/bin/python directly)
@@ -66,6 +94,11 @@ def collection_page():
 @app.route('/listings')
 def listings_page():
     return send_from_directory('.', 'listings.html')
+
+@app.route('/workbench')
+@_workbench_auth_required
+def workbench_page():
+    return send_from_directory('.', 'workbench.html')
 
 # ── Agent Platform Proxy ────────────────────────────────────────
 import urllib.request as _urllib_req
@@ -116,9 +149,30 @@ def agent_proxy(subpath):
 
 @app.route('/<path:filename>')
 def static_files(filename):
-    if os.path.isfile(os.path.join(os.path.dirname(__file__), filename)):
+    # Explicit allowlist prevents source, .env and runtime files from being
+    # exposed through this catch-all route. workbench.html is intentionally
+    # excluded; it is only served by the authenticated /workbench route.
+    public_files = {
+        'index.html', 'upload.html', 'review.html', 'mysok_import.html',
+        'map.html', 'collection.html', 'listings.html', 'listing.html',
+    }
+    public_prefixes = ('vendor/', 'config/', 'uploads/reins/', 'uploads/thumbs/')
+    if filename in public_files or filename.startswith(public_prefixes):
         return send_from_directory('.', filename)
     return jsonify({'error': 'not found'}), 404
+
+
+@app.route('/uploads/reins-extracted/_preview/<path:filename>')
+@_workbench_auth_required
+def serve_reins_extract_preview(filename):
+    return send_from_directory(CONTROLLED_TEMP_ROOT, filename)
+
+
+@app.route('/uploads/reins-extracted/<listing_id>/<path:filename>')
+def serve_reins_extracted_photo(listing_id, filename):
+    if not listing_id or '..' in listing_id or '/' in listing_id or filename.startswith('_preview/'):
+        return jsonify({'error': 'not found'}), 404
+    return send_from_directory(os.path.join(os.path.dirname(__file__), 'uploads', 'reins-extracted', listing_id), filename)
 
 # ── Drafts list API ──
 @app.route('/api/drafts')
@@ -194,32 +248,35 @@ def update_listing(listing_id):
 # ── Search API ──
 @app.route('/api/search')
 def search():
-    q = request.args.get('q', '').strip().lower()
+    """Search the local published library with deterministic hard constraints."""
+    q = request.args.get('q', '').strip()
     conn = get_db()
-    if q:
-        # Build query: search text fields + keywords
-        results = conn.execute("""
-            SELECT * FROM listings
-            WHERE status = 'published'
-            AND (
-                address LIKE ? OR station LIKE ? OR room_layout LIKE ? OR
-                ai_generated_copy LIKE ? OR ai_keywords LIKE ? OR
-                structure LIKE ? OR type LIKE ? OR orientation LIKE ?
-            )
-            ORDER BY
-                CASE WHEN address LIKE ? THEN 0 ELSE 1 END,
-                price ASC
-            LIMIT 8
-        """, (f'%{q}%',) * 8 + (f'%{q}%',)).fetchall()
-    else:
-        results = conn.execute("""
+    if not q:
+        rows = conn.execute("""
             SELECT * FROM listings WHERE status='published'
             ORDER BY price DESC LIMIT 8
         """).fetchall()
+        from property_search import filter_local_listings
+        listings = filter_local_listings([_row_to_dict(row) for row in rows], "")
+        conn.close()
+        return jsonify({'count': len(listings), 'listings': listings, 'constraints': {}})
 
-    listings = [_row_to_dict(r) for r in results]
+    # Do not use a broad SQL LIKE shortcut here.  A query such as "3億以下"
+    # must always execute the numeric ceiling even if the phrase also appears
+    # in generated copy or notes.
+    rows = conn.execute("""
+        SELECT * FROM listings WHERE status='published'
+        ORDER BY updated_at DESC
+    """).fetchall()
     conn.close()
-    return jsonify({'count': len(listings), 'listings': listings})
+
+    from property_search import filter_local_listings, parse_query
+    listings = filter_local_listings([_row_to_dict(row) for row in rows], q)
+    return jsonify({
+        'count': len(listings),
+        'listings': listings[:100],
+        'constraints': parse_query(q),
+    })
 
 @app.route('/api/market-intel')
 def market_intel():
@@ -498,7 +555,8 @@ def all_listings():
         SELECT * FROM listings WHERE status='published'
         ORDER BY price DESC
     """).fetchall()
-    listings = [_row_to_dict(r) for r in results]
+    from property_search import filter_local_listings
+    listings = list(reversed(filter_local_listings([_row_to_dict(r) for r in results], "")))
     conn.close()
 
     # Add raw price fields for consistency
@@ -532,7 +590,335 @@ def listing_detail(listing_id):
     conn.close()
     if not row:
         return jsonify({'error': 'not found'}), 404
-    return jsonify(_row_to_dict(row))
+    from property_search import filter_local_listings
+    return jsonify(filter_local_listings([_row_to_dict(row)], "")[0])
+
+
+def _json_load_list(value):
+    if isinstance(value, list):
+        return value
+    if not value:
+        return []
+    try:
+        parsed = json.loads(value)
+        return parsed if isinstance(parsed, list) else []
+    except Exception:
+        return []
+
+
+@app.route('/api/reins-photo-preview/<listing_id>', methods=['POST'])
+@_workbench_auth_required
+def reins_photo_preview(listing_id):
+    """Read-only DB endpoint: extract local REINS drawing-photo candidates."""
+    conn = get_db()
+    row = conn.execute(
+        "SELECT id, source, reins_drawing_pdf FROM listings WHERE id = ?",
+        (listing_id,),
+    ).fetchone()
+    conn.close()
+    if not row or row['source'] != 'reins':
+        return jsonify({'code': 0, 'error': 'REINS listing not found'}), 404
+    if not row['reins_drawing_pdf']:
+        return jsonify({'code': 0, 'error': 'REINS drawing PDF not found'}), 404
+    try:
+        result = preview_candidates(row['id'], row['reins_drawing_pdf'])
+        return jsonify(result)
+    except ExtractionError as e:
+        return jsonify({'code': 0, 'error': str(e)}), e.status
+    except Exception as e:
+        return jsonify({'code': 0, 'error': f'REINS photo extraction failed: {e}'}), 500
+
+
+@app.route('/api/reins-photo-confirm/<listing_id>', methods=['POST'])
+@_workbench_auth_required
+def reins_photo_confirm(listing_id):
+    """Persist selected preview candidates into listing.interior_photos[]."""
+    data = request.get_json(silent=True) or {}
+    selections = data.get('candidates') or data.get('selections') or []
+    if not isinstance(selections, list):
+        return jsonify({'code': 0, 'error': 'candidates must be a list'}), 400
+
+    conn = get_db()
+    row = conn.execute(
+        "SELECT id, source, reins_drawing_pdf, interior_photos FROM listings WHERE id = ?",
+        (listing_id,),
+    ).fetchone()
+    if not row or row['source'] != 'reins':
+        conn.close()
+        return jsonify({'code': 0, 'error': 'REINS listing not found'}), 404
+    if not row['reins_drawing_pdf']:
+        conn.close()
+        return jsonify({'code': 0, 'error': 'REINS drawing PDF not found'}), 404
+
+    try:
+        saved, selected_count = confirm_candidates(row['id'], row['reins_drawing_pdf'], selections)
+        existing = _json_load_list(row['interior_photos'])
+        seen_urls = {p.get('url') if isinstance(p, dict) else str(p) for p in existing}
+        added = []
+        for entry in saved:
+            if entry['url'] in seen_urls:
+                continue
+            existing.append(entry)
+            seen_urls.add(entry['url'])
+            added.append(entry)
+        if added:
+            conn.execute(
+                "UPDATE listings SET interior_photos=?, updated_at=? WHERE id=?",
+                (json.dumps(existing, ensure_ascii=False), datetime.now(timezone.utc).isoformat(), row['id']),
+            )
+            conn.commit()
+        conn.close()
+        return jsonify({
+            'code': 1,
+            'selected': selected_count,
+            'confirmed': len(added),
+            'total': len(existing),
+            'photos': added,
+            'idempotent_skipped': selected_count - len(added),
+        })
+    except ExtractionError as e:
+        conn.close()
+        return jsonify({'code': 0, 'error': str(e)}), e.status
+    except Exception as e:
+        conn.close()
+        return jsonify({'code': 0, 'error': f'REINS photo confirmation failed: {e}'}), 500
+
+
+# ── Private Property Workbench API v1 ──
+def _v1_client_assignments(conn, listing_ids=None):
+    sql = """
+        SELECT cs.listing_id, c.id, c.name, cs.search_query, cs.note, cs.created_at
+        FROM client_shortlists cs
+        JOIN clients c ON c.id = cs.client_id
+    """
+    params = []
+    if listing_ids:
+        placeholders = ",".join("?" for _ in listing_ids)
+        sql += f" WHERE cs.listing_id IN ({placeholders})"
+        params.extend(listing_ids)
+    sql += " ORDER BY cs.created_at DESC"
+    result = {}
+    for row in conn.execute(sql, params).fetchall():
+        result.setdefault(row["listing_id"], []).append({
+            "id": row["id"],
+            "name": row["name"],
+            "searchQuery": row["search_query"] or "",
+            "note": row["note"] or "",
+            "addedAt": row["created_at"] or "",
+        })
+    return result
+
+
+def _v1_all_properties():
+    conn = get_db()
+    rows = conn.execute("SELECT * FROM listings").fetchall()
+    assignments = _v1_client_assignments(conn)
+    conn.close()
+    properties = []
+    for row in rows:
+        data = _row_to_dict(row)
+        data["_client_assignments"] = assignments.get(data["id"], [])
+        properties.append(standardize_property(data))
+    return properties
+
+
+@app.route('/api/v1/properties')
+@_workbench_auth_required
+def v1_properties():
+    try:
+        page = max(1, int(request.args.get('page', 1)))
+        page_size = min(100, max(1, int(request.args.get('page_size', 20))))
+        min_price = max(0, int(request.args.get('min_price', 0) or 0))
+        max_price = max(0, int(request.args.get('max_price', 0) or 0))
+        min_completeness = float(request.args.get('min_completeness', 0) or 0)
+    except (TypeError, ValueError):
+        return jsonify({'code': 0, 'error': 'Invalid numeric query parameter'}), 400
+    if not 0 <= min_completeness <= 1:
+        return jsonify({'code': 0, 'error': 'min_completeness must be between 0 and 1'}), 400
+
+    filters = {
+        'q': request.args.get('q', '').strip(),
+        'area': request.args.get('area', '').strip(),
+        'min_price': min_price,
+        'max_price': max_price,
+        'layout': request.args.get('layout', '').strip(),
+        'status': request.args.get('status', 'all').strip().lower(),
+        'min_completeness': min_completeness,
+        'source': request.args.get('source', 'all').strip().lower(),
+        'sort': request.args.get('sort', 'updated_desc').strip().lower(),
+    }
+    if filters['status'] not in {'all', 'draft', 'published', 'archived', 'lead'}:
+        return jsonify({'code': 0, 'error': 'Invalid status'}), 400
+    if filters['source'] not in {'all', 'reins', 'suumo', 'upload', 'mysok', 'sample'}:
+        return jsonify({'code': 0, 'error': 'Invalid source'}), 400
+
+    items = filter_properties(
+        _v1_all_properties(),
+        q=filters['q'],
+        area=filters['area'],
+        min_price=filters['min_price'],
+        max_price=filters['max_price'],
+        layout=filters['layout'],
+        status=filters['status'],
+        min_completeness=filters['min_completeness'],
+        source=filters['source'],
+    )
+    items = sort_properties(items, filters['sort'])
+    total = len(items)
+    start = (page - 1) * page_size
+    pages = (total + page_size - 1) // page_size if total else 0
+    return jsonify({
+        'items': items[start:start + page_size],
+        'page': page,
+        'pageSize': page_size,
+        'total': total,
+        'totalPages': pages,
+        'filters': filters,
+    })
+
+
+@app.route('/api/v1/properties/<listing_id>')
+@_workbench_auth_required
+def v1_property_detail(listing_id):
+    conn = get_db()
+    row = conn.execute("SELECT * FROM listings WHERE id = ?", (listing_id,)).fetchone()
+    conn.close()
+    if not row:
+        return jsonify({'code': 0, 'error': 'Property not found'}), 404
+    conn = get_db()
+    assignments = _v1_client_assignments(conn, [listing_id])
+    conn.close()
+    data = _row_to_dict(row)
+    data["_client_assignments"] = assignments.get(listing_id, [])
+    return jsonify(standardize_property(data))
+
+
+@app.route('/api/v1/property-stats')
+@_workbench_auth_required
+def v1_property_stats():
+    return jsonify(property_stats(_v1_all_properties()))
+
+
+@app.route('/api/v1/clients', methods=['GET', 'POST'])
+@_workbench_auth_required
+def v1_clients():
+    conn = get_db()
+    if request.method == 'POST':
+        data = request.get_json(silent=True) or {}
+        name = str(data.get('name') or '').strip()
+        requirement = str(data.get('requirementText') or '').strip()
+        if not name:
+            conn.close()
+            return jsonify({'code': 0, 'error': 'Client name is required'}), 400
+        if len(name) > 80 or len(requirement) > 2000:
+            conn.close()
+            return jsonify({'code': 0, 'error': 'Client data is too long'}), 400
+        client_id = 'CL-' + uuid.uuid4().hex[:12].upper()
+        now = datetime.now(timezone.utc).isoformat()
+        conn.execute(
+            "INSERT INTO clients (id, name, requirement_text, created_at, updated_at) VALUES (?,?,?,?,?)",
+            (client_id, name, requirement, now, now),
+        )
+        conn.commit()
+        row = conn.execute("SELECT * FROM clients WHERE id=?", (client_id,)).fetchone()
+        conn.close()
+        return jsonify({'code': 1, 'client': dict(row)}), 201
+
+    rows = conn.execute("""
+        SELECT c.*, COUNT(cs.listing_id) AS shortlist_count
+        FROM clients c
+        LEFT JOIN client_shortlists cs ON cs.client_id = c.id
+        WHERE c.status = 'active'
+        GROUP BY c.id
+        ORDER BY c.updated_at DESC
+    """).fetchall()
+    conn.close()
+    return jsonify({'code': 1, 'clients': [dict(row) for row in rows]})
+
+
+@app.route('/api/v1/shortlists', methods=['POST'])
+@_workbench_auth_required
+def v1_add_shortlist():
+    data = request.get_json(silent=True) or {}
+    client_id = str(data.get('clientId') or '').strip()
+    listing_id = str(data.get('listingId') or '').strip()
+    search_query = str(data.get('searchQuery') or '').strip()[:500]
+    note = str(data.get('note') or '').strip()[:1000]
+    if not client_id or not listing_id:
+        return jsonify({'code': 0, 'error': 'clientId and listingId are required'}), 400
+
+    conn = get_db()
+    client = conn.execute("SELECT id, name FROM clients WHERE id=? AND status='active'", (client_id,)).fetchone()
+    listing = conn.execute("SELECT id FROM listings WHERE id=?", (listing_id,)).fetchone()
+    if not client or not listing:
+        conn.close()
+        return jsonify({'code': 0, 'error': 'Client or property not found'}), 404
+    existing = conn.execute(
+        "SELECT 1 FROM client_shortlists WHERE client_id=? AND listing_id=?",
+        (client_id, listing_id),
+    ).fetchone()
+    conn.execute("""
+        INSERT INTO client_shortlists (client_id, listing_id, search_query, note)
+        VALUES (?,?,?,?)
+        ON CONFLICT(client_id, listing_id) DO UPDATE SET
+            search_query=excluded.search_query,
+            note=CASE WHEN excluded.note != '' THEN excluded.note ELSE client_shortlists.note END
+    """, (client_id, listing_id, search_query, note))
+    created = existing is None
+    conn.execute("UPDATE clients SET updated_at=? WHERE id=?", (datetime.now(timezone.utc).isoformat(), client_id))
+    conn.commit()
+    conn.close()
+    return jsonify({
+        'code': 1,
+        'created': created,
+        'client': {'id': client['id'], 'name': client['name']},
+        'listingId': listing_id,
+    })
+
+
+@app.route('/api/v1/shortlists/<client_id>/<listing_id>', methods=['DELETE'])
+@_workbench_auth_required
+def v1_remove_shortlist(client_id, listing_id):
+    conn = get_db()
+    conn.execute("DELETE FROM client_shortlists WHERE client_id=? AND listing_id=?", (client_id, listing_id))
+    removed = conn.total_changes > 0
+    conn.commit()
+    conn.close()
+    return jsonify({'code': 1, 'removed': removed})
+
+
+@app.route('/api/v1/properties/<listing_id>/review', methods=['PATCH'])
+@_workbench_auth_required
+def v1_property_review(listing_id):
+    data = request.get_json(silent=True) or {}
+    action = str(data.get('action') or '').strip().lower()
+    if action not in {'publish', 'archive', 'reject', 'draft'}:
+        return jsonify({'code': 0, 'error': 'Invalid review action'}), 400
+
+    conn = get_db()
+    row = conn.execute("SELECT * FROM listings WHERE id = ?", (listing_id,)).fetchone()
+    conn.close()
+    if not row:
+        return jsonify({'code': 0, 'error': 'Property not found'}), 404
+
+    if action == 'publish':
+        legacy_response = app.make_response(confirm_listing(listing_id))
+        if legacy_response.status_code >= 400:
+            return legacy_response
+    else:
+        target_status = 'archived' if action in {'archive', 'reject'} else 'draft'
+        conn = get_db()
+        conn.execute(
+            "UPDATE listings SET status=?, updated_at=? WHERE id=?",
+            (target_status, datetime.now(timezone.utc).isoformat(), listing_id),
+        )
+        conn.commit()
+        conn.close()
+
+    conn = get_db()
+    updated = conn.execute("SELECT * FROM listings WHERE id = ?", (listing_id,)).fetchone()
+    conn.close()
+    return jsonify({'code': 1, 'property': standardize_property(_row_to_dict(updated))})
 
 @app.route('/api/listing/<listing_id>', methods=['DELETE'])
 def delete_listing(listing_id):
@@ -2074,6 +2460,18 @@ def _row_to_dict(row):
 
 # ── Route planning (Google Maps Directions API) ──
 GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY", "")
+
+@app.route('/api/map-status')
+def map_status():
+    """Expose map capability state without returning credentials."""
+    return jsonify({
+        "code": 1,
+        "baseMap": True,
+        "routeConfigured": bool(GOOGLE_MAPS_API_KEY),
+        "hazardLayersConfigured": bool(os.environ.get("REINFOLIB_API_KEY", "")),
+        "apiBase": request.host_url.rstrip("/"),
+    })
+
 _route_cache = {}
 ROUTE_CACHE_TTL = 21600  # 6 hours
 

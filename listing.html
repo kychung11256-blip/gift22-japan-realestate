@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" class="dark">
+<html lang="ja">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -14,10 +14,10 @@ tailwind.config = {
     extend: {
       fontFamily: { sans: ['Geist', 'system-ui', 'sans-serif'] },
       colors: {
-        gold:  { DEFAULT: '#e0b97a', light: '#f0d080', dark: '#c9973a', muted: 'rgba(224,185,122,0.12)' },
-        surface:{ DEFAULT: '#0a0a0f', card: '#111118', elevated: '#16161f' },
-        border:{ DEFAULT: '#252538', subtle: '#1e1e30' },
-        muted: '#888', dim: '#555', good: '#4ade80', warn: '#fbbf24', bad: '#f87171', info: '#60a5fa',
+        gold:  { DEFAULT: '#164d3d', light: '#23755b', dark: '#0f3f32', muted: 'rgba(22,77,61,0.12)' },
+        surface:{ DEFAULT: '#f4f6f3', card: '#ffffff', elevated: '#edf1ee' },
+        border:{ DEFAULT: '#dfe7e3', subtle: '#e8eeeb' },
+        muted: '#68776f', dim: '#7c8984', good: '#36a77b', warn: '#c88a38', bad: '#a9573c', info: '#4f7c70',
       }
     }
   }
@@ -25,21 +25,21 @@ tailwind.config = {
 </script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: #0a0a0f; color: #fff; }
+  body { background: #f4f6f3; color: #fff; }
   ::-webkit-scrollbar { width: 4px; }
-  ::-webkit-scrollbar-track { background: #0a0a0f; }
-  ::-webkit-scrollbar-thumb { background: #252538; border-radius: 2px; }
+  ::-webkit-scrollbar-track { background: #f4f6f3; }
+  ::-webkit-scrollbar-thumb { background: #dfe7e3; border-radius: 2px; }
 
   /* Photo gallery */
-  .gallery-main { position: relative; overflow: hidden; border-radius: 16px; background: #111118; }
-  .gallery-main img { width: 100%; height: 420px; object-fit: contain; cursor: pointer; transition: opacity 0.3s; background: #0a0a0f; }
+  .gallery-main { position: relative; overflow: hidden; border-radius: 16px; background: #ffffff; }
+  .gallery-main img { width: 100%; height: 420px; object-fit: contain; cursor: pointer; transition: opacity 0.3s; background: #f4f6f3; }
   .gallery-nav { position: absolute; top: 50%; transform: translateY(-50%); width: 40px; height: 40px; border-radius: 50%; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.15); color: #fff; font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; z-index: 2; }
   .gallery-nav:hover { background: rgba(0,0,0,0.8); }
   .gallery-prev { left: 12px; }
   .gallery-next { right: 12px; }
   .gallery-thumbs { display: flex; gap: 8px; overflow-x: auto; padding: 12px 0; }
   .gallery-thumbs img { width: 88px; height: 60px; object-fit: cover; border-radius: 8px; cursor: pointer; border: 2px solid transparent; opacity: 0.5; transition: all 0.2s; flex-shrink: 0; }
-  .gallery-thumbs img.active { border-color: #e0b97a; opacity: 1; }
+  .gallery-thumbs img.active { border-color: #164d3d; opacity: 1; }
   .gallery-thumbs img:hover { opacity: 0.8; }
   .gallery-counter { position: absolute; bottom: 16px; right: 16px; background: rgba(0,0,0,0.6); color: #fff; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 500; z-index: 2; }
 
@@ -53,13 +53,14 @@ tailwind.config = {
   .lb-nav:hover { background: rgba(255,255,255,0.2); }
   .lb-prev { left: 20px; }
   .lb-next { right: 20px; }
-  .lb-counter { position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); color: #888; font-size: 13px; z-index: 2; }
+  .lb-counter { position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); color: #68776f; font-size: 13px; z-index: 2; }
 
   /* Detail table */
   .detail-table { width: 100%; border-collapse: collapse; }
-  .detail-table th { text-align: left; padding: 12px 16px; font-size: 13px; color: #888; font-weight: 500; width: 200px; min-width: 200px; vertical-align: top; border-bottom: 1px solid #1e1e30; background: #111118; }
-  .detail-table td { padding: 12px 16px; font-size: 14px; font-weight: 600; border-bottom: 1px solid #1e1e30; white-space: normal; word-break: break-word; overflow-wrap: anywhere; line-height: 1.55; vertical-align: top; }
+  .detail-table th { text-align: left; padding: 12px 16px; font-size: 13px; color: #68776f; font-weight: 500; width: 200px; min-width: 200px; vertical-align: top; border-bottom: 1px solid #e8eeeb; background: #ffffff; }
+  .detail-table td { padding: 12px 16px; font-size: 14px; font-weight: 600; border-bottom: 1px solid #e8eeeb; white-space: normal; word-break: break-word; overflow-wrap: anywhere; line-height: 1.55; vertical-align: top; }
 </style>
+<link rel="stylesheet" href="/vendor/workbench-theme.css">
 </head>
 <body class="font-sans antialiased">
 
@@ -135,8 +136,20 @@ async function load() {
   }
 }
 
+function dedupeUrls(items) {
+  const out = [], seen = new Set();
+  (items || []).forEach(v => {
+    const url = typeof v === 'string' ? v : (v && v.url);
+    if (url && !seen.has(url)) { seen.add(url); out.push(url); }
+  });
+  return out;
+}
+
 function render(p) {
-  const allPhotos = (p.photos || []).filter(u => typeof u === 'string');
+  const allPhotos = dedupeUrls(p.photos || []);
+  const interiorPhotos = (p.interior_photos || []).filter(x => x && (x.url || typeof x === 'string'));
+  const interiorPhotoUrls = dedupeUrls(interiorPhotos);
+  const originalStagingPhotos = dedupeUrls([...allPhotos, ...interiorPhotoUrls]);
   const floorplan = (p.floorplan_images || []).filter(f => f.url || f);
   const fpUrl = p.floorplan_url || (floorplan.length > 0 ? (floorplan[0].url || floorplan[0]) : '');
   // REINS：gallery 用 rendered drawing images（floorplan_images）；其他 source 照舊用 photos+floorplan
@@ -145,9 +158,11 @@ function render(p) {
   const allImages = isReins && reinsDrawingImgs.length > 0
     ? reinsDrawingImgs
     : [...allPhotos, fpUrl].filter(Boolean);
+  const canExtractReinsPhotos = isReins && allPhotos.length === 0 && interiorPhotoUrls.length === 0 && !!p.reins_drawing_pdf;
   const stagedPhotos = (p.staged_photos || []).filter(s => s && s.url);
   window._stagedPhotos = stagedPhotos;
   window._listingData = p;
+  window._originalStagingPhotos = originalStagingPhotos;
 
   const sourceMap = {
     'sample': { label: '示範', cls: 'text-dim' },
@@ -211,10 +226,15 @@ function render(p) {
       </div>
       <div class="p-5">
         <div id="tabPaneOriginal">
-          ${allPhotos.length > 0 ? `
+          ${originalStagingPhotos.length > 0 ? `
           <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            ${allPhotos.map(u => `<img src="${esc(u)}" class="w-full h-32 object-cover rounded-lg cursor-pointer" onclick="openLightbox(${JSON.stringify(allPhotos)},${allPhotos.indexOf(u)})" onerror="this.style.display='none'">`).join('')}
-          </div>` : '<div class="text-xs text-dim py-4 text-center">暫無原始相片</div>'}
+            ${originalStagingPhotos.map((u, i) => `<img src="${esc(u)}" class="w-full h-32 object-cover rounded-lg cursor-pointer" onclick="openLightbox(window._originalStagingPhotos,${i})" onerror="this.style.display='none'">`).join('')}
+          </div>` : (canExtractReinsPhotos ? `
+          <div class="text-center py-6 border border-dashed border-gold/40 rounded-xl bg-gold-muted">
+            <div class="text-sm font-bold text-gold mb-1">REINS 圖面包含室內相片</div>
+            <div class="text-[11px] text-dim mb-4">先本機提取候選，勾選後先會保存為 interior_photos；不會自動生成 AI 圖。</div>
+            <button onclick="openReinsExtractModal('${esc(p.id)}')" class="bg-gold hover:bg-gold-dark text-black font-bold px-5 py-2.5 rounded-xl text-sm transition-colors">從 REINS 圖面提取相片</button>
+          </div>` : '<div class="text-xs text-dim py-4 text-center">暫無原始相片</div>')}
         </div>
         <div id="tabPaneStaged" class="hidden">
           ${stagedPhotos.length > 0 ? `
@@ -428,14 +448,16 @@ const STG_STYLES = [
 ];
 const STG_ROOMS = [
   ['living', '客廳'], ['bedroom', '睡房'], ['kitchen', '廚房'],
-  ['dining', '餐廳'], ['study', '書房'], ['ldk', 'LDK']
+  ['dining', '餐廳'], ['study', '書房'], ['ldk', 'LDK'], ['other', '其他']
 ];
+const REINS_ROOM_LABELS = ['客廳','睡房','廚房','餐廳','書房','LDK','其他'];
+let reinsExtractState = { lid: null, candidates: [], selected: new Set(), labels: {}, active: 0, error: '' };
 let stgState = { lid: null, photoUrl: null, style: 'modern', mode: 'furnish', room: 'living', result: null, photos: [] };
 
 function openStagingModal(lid, photoUrl) {
   // photoUrl 可為空 — 咁就要用戶先揀一張內觀相
   const p = window._listingData || {};
-  const photos = (p.photos || []).filter(u => typeof u === 'string');
+  const photos = dedupeUrls([...(p.photos || []), ...(p.interior_photos || [])]);
   stgState = { lid, photoUrl: photoUrl || photos[0] || '', style: 'modern', mode: 'furnish', room: 'living', result: null, photos };
   let modal = document.getElementById('stagingModal');
   if (!modal) {
@@ -459,13 +481,94 @@ function stgPick(field, value) {
   renderStagingModal();
 }
 
+async function openReinsExtractModal(lid) {
+  reinsExtractState = { lid, candidates: [], selected: new Set(), labels: {}, active: 0, error: '' };
+  let modal = document.getElementById('reinsExtractModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'reinsExtractModal';
+    modal.className = 'fixed inset-0 z-[920] bg-black/80 flex items-center justify-center p-4';
+    document.body.appendChild(modal);
+  }
+  modal.innerHTML = '<div class="bg-surface-card border border-border rounded-2xl w-full max-w-5xl max-h-[92vh] overflow-y-auto p-5"><div class="flex items-center justify-between mb-4"><h3 class="text-sm font-bold text-gold">REINS 圖面相片提取</h3><button onclick="closeReinsExtractModal()" class="w-7 h-7 rounded-full bg-surface-elevated border border-border text-dim hover:text-gold text-sm">✕</button></div><div class="text-xs text-gold py-10 text-center">本機解析 drawing.pdf 中...</div></div>';
+  modal.classList.remove('hidden');
+  try {
+    const r = await fetch('/api/reins-photo-preview/' + encodeURIComponent(lid), { method: 'POST' });
+    const d = await r.json();
+    if (!r.ok || d.code !== 1) throw new Error(d.error || '提取失敗');
+    reinsExtractState.candidates = d.candidates || [];
+    reinsExtractState.selected = new Set(reinsExtractState.candidates.filter(c => !c.excluded && c.classification === 'interior_photo').map(c => c.id));
+    reinsExtractState.labels = {};
+    reinsExtractState.candidates.forEach(c => { reinsExtractState.labels[c.id] = '其他'; });
+    reinsExtractState.active = 0;
+  } catch (e) {
+    reinsExtractState.error = e.message;
+  }
+  renderReinsExtractModal();
+}
+
+function closeReinsExtractModal() {
+  const modal = document.getElementById('reinsExtractModal');
+  if (modal) modal.classList.add('hidden');
+}
+
+function reinsToggle(id, checked) {
+  if (checked) reinsExtractState.selected.add(id); else reinsExtractState.selected.delete(id);
+  renderReinsExtractModal();
+}
+
+function reinsSetLabel(id, label) { reinsExtractState.labels[id] = label; }
+function reinsSetActive(i) { reinsExtractState.active = i; renderReinsExtractModal(); }
+
+function renderReinsExtractModal() {
+  const modal = document.getElementById('reinsExtractModal');
+  if (!modal) return;
+  const s = reinsExtractState;
+  if (s.error) {
+    modal.innerHTML = '<div class="bg-surface-card border border-border rounded-2xl w-full max-w-xl p-5"><div class="flex items-center justify-between mb-4"><h3 class="text-sm font-bold text-gold">REINS 圖面相片提取</h3><button onclick="closeReinsExtractModal()" class="w-7 h-7 rounded-full bg-surface-elevated border border-border text-dim hover:text-gold text-sm">✕</button></div><div class="bg-bad/10 border border-bad/30 rounded-xl p-3 text-xs text-bad mb-4">' + esc(s.error) + '</div><a href="' + esc((window._listingData||{}).reins_drawing_pdf || '#') + '" target="_blank" class="text-xs text-gold underline">図面を見る</a></div>';
+    return;
+  }
+  const cands = s.candidates || [];
+  const active = cands[s.active] || cands[0];
+  const cards = cands.map((c, i) => {
+    const checked = s.selected.has(c.id);
+    const disabled = c.excluded || c.classification !== 'interior_photo';
+    const opts = REINS_ROOM_LABELS.map(l => '<option value="' + l + '"' + ((s.labels[c.id] || '其他') === l ? ' selected' : '') + '>' + l + '</option>').join('');
+    return '<div class="border rounded-xl p-2 ' + (i === s.active ? 'border-gold bg-gold-muted' : 'border-border bg-surface') + '">' +
+      '<img src="' + esc(c.url) + '" onclick="reinsSetActive(' + i + ')" class="w-full h-28 object-cover rounded-lg cursor-pointer mb-2" onerror="this.style.display=\'none\'">' +
+      '<label class="flex items-center gap-2 text-xs mb-2 ' + (disabled ? 'text-dim' : 'text-muted') + '"><input type="checkbox" ' + (checked ? 'checked' : '') + (disabled ? ' disabled' : '') + ' onchange="reinsToggle(\'' + esc(c.id) + '\',this.checked)">選取</label>' +
+      '<select onchange="reinsSetLabel(\'' + esc(c.id) + '\',this.value)" class="w-full text-xs rounded-lg border border-border bg-surface-card px-2 py-1.5 mb-2" ' + (disabled ? 'disabled' : '') + '>' + opts + '</select>' +
+      '<div class="text-[10px] text-dim">頁 ' + c.page + ' · ' + esc(c.classification) + ' · Q' + c.quality + '</div>' +
+      (disabled ? '<div class="text-[10px] text-bad mt-1">預設排除：' + esc(c.reason || '') + '</div>' : '<div class="text-[10px] text-good mt-1">' + esc(c.reason || '室內相片候選') + '</div>') +
+    '</div>';
+  }).join('');
+  modal.innerHTML = '<div class="bg-surface-card border border-border rounded-2xl w-full max-w-5xl max-h-[92vh] overflow-y-auto p-5">' +
+    '<div class="flex items-center justify-between mb-4"><div><h3 class="text-sm font-bold text-gold">REINS 圖面相片提取</h3><div class="text-[11px] text-dim">確認前不寫入 DB；平面圖／地圖／純文字候選預設排除。</div></div><button onclick="closeReinsExtractModal()" class="w-7 h-7 rounded-full bg-surface-elevated border border-border text-dim hover:text-gold text-sm">✕</button></div>' +
+    (cands.length ? '<div class="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-4"><div class="bg-surface rounded-xl p-3 flex items-center justify-center min-h-[280px]"><img src="' + esc(active.url) + '" class="max-w-full max-h-[58vh] object-contain rounded-lg"><div class="absolute mt-2"></div></div><div><div class="text-xs text-muted mb-2">候選 ' + cands.length + ' 張，已選 ' + s.selected.size + ' 張</div><div class="grid grid-cols-2 gap-2 max-h-[58vh] overflow-y-auto pr-1">' + cards + '</div></div></div>' : '<div class="text-xs text-dim py-8 text-center">沒有可提取候選；請使用「図面を見る」。</div>') +
+    '<div class="mt-4 flex gap-3"><button onclick="confirmReinsExtraction()" class="flex-1 bg-gold hover:bg-gold-dark text-black font-bold py-3 rounded-xl text-sm" ' + (s.selected.size ? '' : 'disabled style="opacity:.4"') + '>確認保存為 interior_photos</button><a href="' + esc((window._listingData||{}).reins_drawing_pdf || '#') + '" target="_blank" class="px-4 py-3 rounded-xl border border-border text-xs text-center text-gold">図面を見る</a></div>' +
+  '</div>';
+}
+
+async function confirmReinsExtraction() {
+  const s = reinsExtractState;
+  const candidates = Array.from(s.selected).map(id => ({ id, room_label: s.labels[id] || '其他' }));
+  try {
+    const r = await fetch('/api/reins-photo-confirm/' + encodeURIComponent(s.lid), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ candidates }) });
+    const d = await r.json();
+    if (!r.ok || d.code !== 1) throw new Error(d.error || '保存失敗');
+    closeReinsExtractModal();
+    await load();
+    switchStagingTab('original');
+  } catch (e) { alert(e.message); }
+}
+
 function renderStagingModal() {
   const modal = document.getElementById('stagingModal');
   const s = stgState;
-  const selCls = 'width:100%;background:#0a0a0f;border:1px solid #252538;border-radius:10px;color:#fff;padding:9px 12px;font-size:13px;outline:none;';
+  const selCls = 'width:100%;background:#f4f6f3;border:1px solid #dfe7e3;border-radius:10px;color:#fff;padding:9px 12px;font-size:13px;outline:none;';
   const photoBtns = s.photos.map((u, i) =>
     '<img src="' + esc(u) + '" onclick="stgPick(\'photoUrl\',\'' + u.replace(/'/g, "\\'") + '\')" style="width:88px;height:60px;object-fit:cover;border-radius:8px;cursor:pointer;border:2px solid ' +
-    (s.photoUrl === u ? '#e0b97a' : 'transparent') + ';opacity:' + (s.photoUrl === u ? '1' : '0.55') + ';" onerror="this.style.display=\'none\'">').join('');
+    (s.photoUrl === u ? '#164d3d' : 'transparent') + ';opacity:' + (s.photoUrl === u ? '1' : '0.55') + ';" onerror="this.style.display=\'none\'">').join('');
   const styleBtns = STG_STYLES.map(([k, label]) =>
     '<button onclick="stgPick(\'style\',\'' + k + '\')" class="px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ' +
     (s.style === k ? 'bg-gold text-black border-gold' : 'bg-surface-elevated text-dim border-border hover:border-gold/50') + '">' + label + '</button>').join('');

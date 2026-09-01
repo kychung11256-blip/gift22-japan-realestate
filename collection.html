@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" class="dark">
+<html lang="ja">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -12,31 +12,32 @@
 tailwind.config = {
   theme: { extend: { fontFamily: { sans: ['Geist', 'system-ui', 'sans-serif'] },
     colors: {
-      gold:  { DEFAULT: '#e0b97a', light: '#f0d080', dark: '#c9973a', muted: 'rgba(224,185,122,0.12)' },
-      surface:{ DEFAULT: '#0a0a0f', card: '#111118', elevated: '#16161f' },
-      border:{ DEFAULT: '#252538', subtle: '#1e1e30' },
-      muted: '#888', dim: '#555', good: '#4ade80', warn: '#fbbf24', bad: '#f87171', info: '#60a5fa',
+      gold:  { DEFAULT: '#164d3d', light: '#23755b', dark: '#0f3f32', muted: 'rgba(22,77,61,0.12)' },
+      surface:{ DEFAULT: '#f4f6f3', card: '#ffffff', elevated: '#edf1ee' },
+      border:{ DEFAULT: '#dfe7e3', subtle: '#e8eeeb' },
+      muted: '#68776f', dim: '#7c8984', good: '#36a77b', warn: '#c88a38', bad: '#a9573c', info: '#4f7c70',
     }
   }}
 }
 </script>
 <style>
 * { box-sizing: border-box; }
-body { background: #0a0a0f; color: #fff; font-family: 'Geist', system-ui, sans-serif; }
-.glass { background: rgba(17,17,24,0.85); backdrop-filter: blur(12px); border-bottom: 1px solid #252538; }
-input, select { background: #111118; border: 1px solid #252538; color: #fff; border-radius: 0.75rem; padding: 0.75rem 1rem; font-size: 0.875rem; outline: none; transition: border-color 0.2s; }
-input:focus, select:focus { border-color: #e0b97a; }
-.btn-gold { background: #e0b97a; color: #000; font-weight: 700; padding: 0.75rem 1.5rem; border-radius: 9999px; font-size: 0.875rem; cursor: pointer; border: none; transition: all 0.2s; }
-.btn-gold:hover { background: #c9973a; }
+body { background: #f4f6f3; color: #fff; font-family: 'Geist', system-ui, sans-serif; }
+.glass { background: rgba(17,17,24,0.85); backdrop-filter: blur(12px); border-bottom: 1px solid #dfe7e3; }
+input, select { background: #ffffff; border: 1px solid #dfe7e3; color: #fff; border-radius: 0.75rem; padding: 0.75rem 1rem; font-size: 0.875rem; outline: none; transition: border-color 0.2s; }
+input:focus, select:focus { border-color: #164d3d; }
+.btn-gold { background: #164d3d; color: #000; font-weight: 700; padding: 0.75rem 1.5rem; border-radius: 9999px; font-size: 0.875rem; cursor: pointer; border: none; transition: all 0.2s; }
+.btn-gold:hover { background: #0f3f32; }
 .btn-gold:disabled { opacity: 0.4; cursor: not-allowed; }
-.result-card { background: #111118; border: 1px solid #252538; border-radius: 1rem; padding: 1rem; transition: all 0.2s; cursor: pointer; }
-.result-card:hover { border-color: #e0b97a; }
-.result-card.selected { border-color: #4ade80; background: rgba(74,222,128,0.05); }
-.checkbox { width: 18px; height: 18px; border-radius: 4px; border: 2px solid #555; cursor: pointer; flex-shrink: 0; }
-.checkbox.checked { background: #4ade80; border-color: #4ade80; }
+.result-card { background: #ffffff; border: 1px solid #dfe7e3; border-radius: 1rem; padding: 1rem; transition: all 0.2s; cursor: pointer; }
+.result-card:hover { border-color: #164d3d; }
+.result-card.selected { border-color: #36a77b; background: rgba(35,117,91,0.05); }
+.checkbox { width: 18px; height: 18px; border-radius: 4px; border: 2px solid #7c8984; cursor: pointer; flex-shrink: 0; }
+.checkbox.checked { background: #36a77b; border-color: #36a77b; }
 .spinner { animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 </style>
+<link rel="stylesheet" href="/vendor/workbench-theme.css">
 </head>
 <body class="min-h-screen">
 
@@ -44,7 +45,7 @@ input:focus, select:focus { border-color: #e0b97a; }
   <div class="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between">
     <div class="flex items-center gap-3">
       <a href="/" class="flex items-center gap-3">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="#e0b97a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="#164d3d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <span class="font-bold text-lg tracking-tight">Johnny AI</span>
       </a>
       <span class="hidden sm:inline text-xs text-dim">| 物件搜尋</span>
@@ -99,7 +100,7 @@ input:focus, select:focus { border-color: #e0b97a; }
       <button id="searchBtn" onclick="doSearch()" class="btn-gold flex items-center gap-2">
         🔍 搜尋
       </button>
-      <button id="importBtn" onclick="doImport()" class="btn-gold flex items-center gap-2" style="display:none; background: #4ade80;">
+      <button id="importBtn" onclick="doImport()" class="btn-gold flex items-center gap-2" style="display:none; background: #36a77b;">
         匯入選中物件
       </button>
       <span id="importNote" class="text-xs text-dim" style="display:none"></span>
@@ -462,14 +463,14 @@ function renderSuumoImportResults(results) {
   const failed = results.filter(r => r.code !== 1);
   let html = '<div class="mt-4 space-y-2">';
   imported.forEach(r => {
-    html += `<div class="result-card" style="border-color:#4ade80">
+    html += `<div class="result-card" style="border-color:#36a77b">
       <span class="text-sm text-white">${esc(r.address)}</span>
       <span class="text-xs text-good ml-2">${r.price ? (parseInt(r.price)>100000?parseInt(r.price)/10000:r.price).toLocaleString()+'万円' : ''}</span>
       <a href="/listing/${r.id}" class="text-xs text-gold ml-2">查看 →</a>
     </div>`;
   });
   failed.forEach(r => {
-    html += `<div class="result-card" style="border-color:#f87171">
+    html += `<div class="result-card" style="border-color:#a9573c">
       <span class="text-sm text-dim truncate">${esc(r.url || '')}</span>
       <span class="text-xs text-bad ml-2">${esc(r.error || '失敗')}</span>
     </div>`;
@@ -517,7 +518,7 @@ function renderReinsJobProgress(job) {
     if (it.status === 'processing') return '處理中';
     return '等候中';
   };
-  const color = it => it.status === 'success' ? '#4ade80' : it.status === 'partial' ? '#fbbf24' : it.status === 'failed' ? '#f87171' : '#555';
+  const color = it => it.status === 'success' ? '#36a77b' : it.status === 'partial' ? '#c88a38' : it.status === 'failed' ? '#a9573c' : '#7c8984';
 
   let html = `<div class="text-sm text-dim mb-2 mt-4">匯入中 ${job.done_count} / ${job.total}</div><div class="space-y-1.5">`;
   job.items.forEach(it => {

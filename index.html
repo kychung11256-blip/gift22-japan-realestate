@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" class="dark">
+<html lang="ja">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -16,15 +16,15 @@ tailwind.config = {
     extend: {
       fontFamily: { sans: ['Geist', 'system-ui', 'sans-serif'] },
       colors: {
-        gold:  { DEFAULT: '#e0b97a', light: '#f0d080', dark: '#c9973a', muted: 'rgba(224,185,122,0.12)' },
-        surface:{ DEFAULT: '#0a0a0f', card: '#111118', elevated: '#16161f' },
-        border:{ DEFAULT: '#252538', subtle: '#1e1e30' },
-        muted: '#888',
-        dim:   '#555',
-        good:  '#4ade80',
-        warn:  '#fbbf24',
-        bad:   '#f87171',
-        info:  '#60a5fa',
+        gold:  { DEFAULT: '#164d3d', light: '#23755b', dark: '#0f3f32', muted: 'rgba(22,77,61,0.12)' },
+        surface:{ DEFAULT: '#f4f6f3', card: '#ffffff', elevated: '#edf1ee' },
+        border:{ DEFAULT: '#dfe7e3', subtle: '#e8eeeb' },
+        muted: '#68776f',
+        dim:   '#7c8984',
+        good:  '#36a77b',
+        warn:  '#c88a38',
+        bad:   '#a9573c',
+        info:  '#4f7c70',
       }
     }
   }
@@ -32,12 +32,12 @@ tailwind.config = {
 </script>
 <style>
   * { box-sizing: border-box; }
-  body { background: #0a0a0f; color: #fff; }
-  .glass { background: rgba(17,17,24,0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-bottom: 1px solid #252538; }
+  body { background: #f4f6f3; color: #fff; }
+  .glass { background: rgba(17,17,24,0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-bottom: 1px solid #dfe7e3; }
   @media (prefers-reduced-transparency: reduce) { .glass { background: rgba(17,17,24,0.98); backdrop-filter: none; -webkit-backdrop-filter: none; } }
   ::-webkit-scrollbar { width: 4px; }
-  ::-webkit-scrollbar-track { background: #0a0a0f; }
-  ::-webkit-scrollbar-thumb { background: #252538; border-radius: 2px; }
+  ::-webkit-scrollbar-track { background: #f4f6f3; }
+  ::-webkit-scrollbar-thumb { background: #dfe7e3; border-radius: 2px; }
 
   /* Scroll-reveal */
   .reveal { opacity: 0; transform: translateY(24px); transition: opacity 0.6s cubic-bezier(0.16,1,0.3,1), transform 0.6s cubic-bezier(0.16,1,0.3,1); }
@@ -47,6 +47,7 @@ tailwind.config = {
   .chart-wrap { position: relative; width: 100%; height: 220px; }
   @media (max-width: 640px) { .chart-wrap { height: 180px; } }
 </style>
+<link rel="stylesheet" href="/vendor/workbench-theme.css">
 </head>
 <body class="min-h-screen font-sans antialiased">
 
@@ -54,7 +55,7 @@ tailwind.config = {
 <header class="sticky top-0 z-50 glass">
   <div class="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
     <div class="flex items-center gap-3">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="#e0b97a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="#164d3d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       <span class="font-bold text-lg tracking-tight">Johnny AI</span>
       <span class="hidden sm:inline text-xs text-dim font-medium">| 不動產智能平台</span>
     </div>
@@ -102,6 +103,10 @@ tailwind.config = {
           class="bg-gold hover:bg-gold-dark text-black font-bold px-6 py-3 rounded-full text-sm transition-colors duration-200 active:scale-[0.98]">
           搜尋
         </button>
+        <a href="/workbench"
+          class="inline-flex items-center justify-center border border-gold text-gold font-bold px-6 py-3 rounded-full text-sm hover:bg-gold-muted transition-colors duration-200">
+          私人房源站
+        </a>
       </div>
       <!-- Search mode toggle -->
       <div class="flex items-center gap-2 mt-3">
@@ -197,7 +202,7 @@ tailwind.config = {
 <section class="pb-12 reveal">
   <div class="bg-surface-card border border-border rounded-2xl p-5 md:p-6">
     <div class="flex items-center gap-2 mb-5">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 2a4 4 0 014 4c0 2-2 4-4 8-2-4-4-6-4-8a4 4 0 014-4z" stroke="#e0b97a" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="6" r="1.5" fill="#e0b97a"/></svg>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 2a4 4 0 014 4c0 2-2 4-4 8-2-4-4-6-4-8a4 4 0 014-4z" stroke="#164d3d" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="6" r="1.5" fill="#164d3d"/></svg>
       <h2 class="text-lg font-bold">AI 智能估價</h2>
       <span class="text-[10px] px-2 py-0.5 rounded-full bg-gold-muted text-gold font-semibold">Beta</span>
     </div>
@@ -320,7 +325,7 @@ async function doSearch(){
   try{
     const r=await fetch('/api/search?q='+encodeURIComponent(q));
     const data=await r.json();
-    if(data.listings&&data.listings.length>0){showResults(data.listings,`「${q}」`);return;}
+    if(Array.isArray(data.listings)){showResults(data.listings,`「${q}」`);return;}
   }catch(e){}
   try{
     const r=await fetch('/api/search');
@@ -422,7 +427,7 @@ function showReinsResults(results,d){
         <div class="text-xs text-dim mb-2">${l.area?l.area+'m²':''} ${l.layout?esc(l.layout):''} ${l.floor?l.floor+'階':''}</div>
         <div class="text-xs text-dim mb-2">${esc(l.line||'')} ${esc(l.station||'')} ${l.walk_min?'徒歩'+l.walk_min+'分':''}</div>
         <div class="text-[10px] text-dim mb-2">物件番号: ${esc(l.reins_id||'')} ｜ 図面: ${l.drawing_available?'有':'無'}</div>
-        <button onclick="importReinsItem('${esc(l.reins_id)}',${!!l.drawing_available},this)" class="w-full mt-1 bg-gold hover:bg-gold-dark text-black text-xs font-bold px-3 py-2 rounded-lg transition-colors">匯入此物件 →</button>
+        <button onclick="importReinsItem('${esc(l.reins_id)}',${!!l.drawing_available},this)" class="w-full mt-1 bg-gold hover:bg-gold-dark text-black text-xs font-bold px-3 py-2 rounded-lg transition-colors">${activeClient()?'匯入並加入 '+esc(activeClient().name):'匯入此物件 →'}</button>
       </div>
     `).join('');
   }
@@ -453,7 +458,13 @@ async function pollNlImport(jobId,btn,reinsId){
     const it=(d.items||[])[0]||{};
     if(d.status==='running'){btn.textContent=`匯入中（${it.status||''}）...`;setTimeout(()=>pollNlImport(jobId,btn,reinsId),2000);return;}
     if(it.status==='success'||it.status==='partial'){
-      btn.outerHTML=`<a href="/listing/${it.listing_id}" class="block w-full mt-1 text-center bg-good text-black text-xs font-bold px-3 py-2 rounded-lg">查看物件 →</a>`;
+      const client=activeClient();
+      if(client){
+        try{await assignListingToActiveClient(it.listing_id);btn.outerHTML=`<a href="/workbench" class="block w-full mt-1 text-center bg-good text-black text-xs font-bold px-3 py-2 rounded-lg">已加入 ${esc(client.name)} 私人房源 →</a>`}
+        catch(e){btn.textContent='已匯入，但加入客戶失敗';btn.disabled=false}
+      }else{
+        btn.outerHTML=`<a href="/listing/${it.listing_id}" class="block w-full mt-1 text-center bg-good text-black text-xs font-bold px-3 py-2 rounded-lg">查看物件 →</a>`;
+      }
     }else{
       btn.textContent='失敗: '+(it.error||'');btn.disabled=false;
     }
@@ -461,6 +472,25 @@ async function pollNlImport(jobId,btn,reinsId){
 }
 
 function esc(s){const d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
+
+function activeClient(){
+  try{return JSON.parse(localStorage.getItem('gift22-active-client')||'null')}catch{return null}
+}
+async function assignListingToActiveClient(listingId){
+  const client=activeClient();
+  if(!client)throw new Error('請先喺私人房源站建立或選擇客戶');
+  const r=await fetch('/api/v1/shortlists',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientId:client.id,listingId,searchQuery:document.getElementById('searchInput').value.trim()})});
+  let d={};try{d=await r.json()}catch{}
+  if(!r.ok)throw new Error(r.status===401?'請先登入私人房源站':(d.error||'加入失敗'));
+  return d;
+}
+async function addLocalToShortlist(listingId,btn){
+  const client=activeClient();
+  if(!client){if(confirm('請先去私人房源站建立或選擇客戶。現在開啟？'))window.open('/workbench','_blank');return}
+  btn.disabled=true;btn.textContent='加入中…';
+  try{await assignListingToActiveClient(listingId);btn.textContent='已加入 '+client.name;btn.classList.remove('bg-gold');btn.classList.add('bg-good')}
+  catch(e){btn.disabled=false;btn.textContent=e.message;if(String(e.message).includes('登入'))window.open('/workbench','_blank')}
+}
 
 function showResults(results,query){
   const grid=document.getElementById('resultsGrid');
@@ -474,14 +504,14 @@ function showResults(results,query){
     grid.innerHTML='<div class="col-span-full text-center py-12 text-dim">沒有找到匹配的物件<br><span class="text-xs">試試其他搜尋條件</span></div>';
   }else{
     grid.innerHTML=results.map(p=>`
-      <a href="/listing/${p.id}" class="block bg-surface-card border border-border rounded-2xl p-4 relative transition-all duration-300 hover:border-gold/50 hover:shadow-lg hover:shadow-gold/5 hover:-translate-y-0.5 no-underline" style="text-decoration:none;color:inherit;">
+      <article class="block bg-surface-card border border-border rounded-2xl p-4 relative transition-all duration-300 hover:border-gold/50 hover:shadow-lg hover:shadow-gold/5 hover:-translate-y-0.5">
         ${(p.yield_surface||0)>=5.5?'<div class="absolute -top-2 right-3 bg-gold text-black text-[10px] font-bold px-2 py-0.5 rounded-full">高回報</div>':''}
         ${(p.walk_min||0)<=3?'<div class="absolute -top-2 left-3 bg-good text-black text-[10px] font-bold px-2 py-0.5 rounded-full">駅近</div>':''}
         <div class="flex items-center justify-between mb-2"><span class="text-sm font-bold text-gold">${p.address||''}</span><span class="text-xs text-dim">${p.station||''} ${p.walk_min||0}分</span></div>
         <div class="text-2xl font-bold mb-1">${(p.price||0).toLocaleString()}<span class="text-sm text-dim">万</span></div>
         <div class="text-xs text-dim mb-2">${p.price_per_sqm||0}万円/m2 - ${p.size_sqm||0}m2 - ${p.room_layout||''} - 築${p.age||0}年</div>
         <div class="flex flex-wrap gap-1 mb-2">
-          <span class="text-[10px] px-2 py-0.5 rounded-full bg-good/10 text-good font-semibold">${p.orientation||''}向</span>
+          ${(p.effective_orientation||p.orientation)?`<span class="text-[10px] px-2 py-0.5 rounded-full bg-good/10 text-good font-semibold">${p.effective_orientation||p.orientation}向</span>`:'<span class="text-[10px] px-2 py-0.5 rounded-full bg-warn/10 text-warn font-semibold">朝向待確認</span>'}
           <span class="text-[10px] px-2 py-0.5 rounded-full bg-info/10 text-info font-semibold">${p.structure||''}</span>
           <span class="text-[10px] px-2 py-0.5 rounded-full ${(p.yield_surface||0)>=5?'bg-warn/10 text-warn':'bg-info/10 text-info'} font-semibold">表面${p.yield_surface||0}%</span>
         </div>
@@ -491,8 +521,12 @@ function showResults(results,query){
           ${riskBadge(p.disaster_liquefaction||p.disaster?.liquefaction||'low','液状化')}
           ${riskBadge(p.disaster_tsunami||p.disaster?.tsunami||'low','津波')}
         </div>
-        <div class="text-xs text-dim mt-2">${p.floor||0}階 / ${p.total_floors||0}階建 - ${p.land_rights||''} - ${p.source==='mysok'?'マイソク':p.source==='upload'?'仲介':'マイソク'}</div>
-      </a>
+        <div class="text-xs text-dim mt-2">${p.floor||0}階 / ${p.total_floors||0}階建 · ${p.land_rights||''} · <span class="font-semibold text-gold">${p.listing_role_label||'身份待確認'}</span></div>
+        <div class="grid grid-cols-2 gap-2 mt-3">
+          <a href="/listing/${p.id}" class="text-center border border-border rounded-lg px-3 py-2 text-xs font-bold text-gold no-underline">查看詳情</a>
+          <button onclick="addLocalToShortlist('${esc(p.id)}',this)" class="bg-gold text-black rounded-lg px-3 py-2 text-xs font-bold">${activeClient()?'加入 '+esc(activeClient().name):'加入客戶私藏'}</button>
+        </div>
+      </article>
     `).join('');
   }
   section.classList.remove('hidden');
@@ -624,8 +658,8 @@ window.loadWeather = loadWeather;
 function drawAreaChart(){
   const areas=Object.entries(DATA.areas).sort((a,b)=>b[1].price_per_sqm_man-a[1].price_per_sqm_man).slice(0,12);
   new Chart(document.getElementById('areaChart'),{
-    type:'bar',data:{labels:areas.map(([k])=>k),datasets:[{label:'m2單價 (萬円)',data:areas.map(([,v])=>v.price_per_sqm_man),backgroundColor:'#e0b97a',borderRadius:6,borderSkipped:false}]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{grid:{color:'#252538'},ticks:{color:'#555',font:{size:10}}},x:{grid:{display:false},ticks:{color:'#555',font:{size:10}}}}}
+    type:'bar',data:{labels:areas.map(([k])=>k),datasets:[{label:'m2單價 (萬円)',data:areas.map(([,v])=>v.price_per_sqm_man),backgroundColor:'#164d3d',borderRadius:6,borderSkipped:false}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{grid:{color:'#dfe7e3'},ticks:{color:'#7c8984',font:{size:10}}},x:{grid:{display:false},ticks:{color:'#7c8984',font:{size:10}}}}}
   });
 }
 
@@ -633,10 +667,10 @@ function drawTrendChart(){
   new Chart(document.getElementById('trendChart'),{
     type:'line',data:{labels:['2024/06','2024/09','2024/12','2025/03','2025/06','2025/09','2025/12','2026/03','2026/06'],
     datasets:[
-      {label:'成約件数 YoY%',data:[2.1,1.5,0.8,-0.3,-1.0,-0.7,-1.2,-0.9,-1.3],borderColor:'#e0b97a',backgroundColor:'rgba(224,185,122,0.08)',fill:true,tension:0.4,pointRadius:3,borderWidth:2},
-      {label:'m2単価 YoY%',data:[1.5,1.0,0.5,0.2,-0.3,-0.5,-0.6,-0.7,-0.8],borderColor:'#4ade80',backgroundColor:'rgba(74,222,128,0.05)',fill:true,tension:0.4,pointRadius:3,borderWidth:2}
+      {label:'成約件数 YoY%',data:[2.1,1.5,0.8,-0.3,-1.0,-0.7,-1.2,-0.9,-1.3],borderColor:'#164d3d',backgroundColor:'rgba(22,77,61,0.08)',fill:true,tension:0.4,pointRadius:3,borderWidth:2},
+      {label:'m2単価 YoY%',data:[1.5,1.0,0.5,0.2,-0.3,-0.5,-0.6,-0.7,-0.8],borderColor:'#36a77b',backgroundColor:'rgba(35,117,91,0.05)',fill:true,tension:0.4,pointRadius:3,borderWidth:2}
     ]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#888',font:{size:11},usePointStyle:true,padding:16}}},scales:{y:{grid:{color:'#252538'},ticks:{color:'#555',font:{size:10}}},x:{grid:{display:false},ticks:{color:'#555',font:{size:10}}}}}
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#68776f',font:{size:11},usePointStyle:true,padding:16}}},scales:{y:{grid:{color:'#dfe7e3'},ticks:{color:'#7c8984',font:{size:10}}},x:{grid:{display:false},ticks:{color:'#7c8984',font:{size:10}}}}}
   });
 }
 

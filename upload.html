@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" class="dark">
+<html lang="ja">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -15,10 +15,10 @@ tailwind.config = {
     extend: {
       fontFamily: { sans: ['Geist', 'system-ui', 'sans-serif'] },
       colors: {
-        gold:  { DEFAULT: '#e0b97a', light: '#f0d080', dark: '#c9973a', muted: 'rgba(224,185,122,0.12)' },
-        surface:{ DEFAULT: '#0a0a0f', card: '#111118', elevated: '#16161f' },
-        border:{ DEFAULT: '#252538', subtle: '#1e1e30' },
-        muted: '#888', dim: '#555', good: '#4ade80', warn: '#fbbf24', bad: '#f87171', info: '#60a5fa',
+        gold:  { DEFAULT: '#164d3d', light: '#23755b', dark: '#0f3f32', muted: 'rgba(22,77,61,0.12)' },
+        surface:{ DEFAULT: '#f4f6f3', card: '#ffffff', elevated: '#edf1ee' },
+        border:{ DEFAULT: '#dfe7e3', subtle: '#e8eeeb' },
+        muted: '#68776f', dim: '#7c8984', good: '#36a77b', warn: '#c88a38', bad: '#a9573c', info: '#4f7c70',
       }
     }
   }
@@ -26,16 +26,17 @@ tailwind.config = {
 </script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: #0a0a0f; color: #fff; }
+  body { background: #f4f6f3; color: #fff; }
   ::-webkit-scrollbar { width: 4px; }
-  ::-webkit-scrollbar-track { background: #0a0a0f; }
-  ::-webkit-scrollbar-thumb { background: #252538; border-radius: 2px; }
-  .form-input { width: 100%; background: #0a0a0f; border: 1px solid #252538; border-radius: 12px; color: #fff; padding: 11px 14px; font-size: 14px; font-family: inherit; outline: none; transition: border-color 0.2s; }
-  .form-input:focus { border-color: #e0b97a; }
-  .form-input::placeholder { color: #555; }
+  ::-webkit-scrollbar-track { background: #f4f6f3; }
+  ::-webkit-scrollbar-thumb { background: #dfe7e3; border-radius: 2px; }
+  .form-input { width: 100%; background: #f4f6f3; border: 1px solid #dfe7e3; border-radius: 12px; color: #fff; padding: 11px 14px; font-size: 14px; font-family: inherit; outline: none; transition: border-color 0.2s; }
+  .form-input:focus { border-color: #164d3d; }
+  .form-input::placeholder { color: #7c8984; }
   textarea.form-input { resize: vertical; min-height: 80px; }
   select.form-input { appearance: none; background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23888' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 36px; }
 </style>
+<link rel="stylesheet" href="/vendor/workbench-theme.css">
 </head>
 <body class="font-sans antialiased p-5 max-w-2xl mx-auto">
 

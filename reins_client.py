@@ -1068,6 +1068,16 @@ def import_reins_listing(reins_id, drawing_available=False, headless=True):
         os.path.dirname(__file__), 'uploads', 'reins', reins_id, 'drawing.pdf'
     )
     if drawing_web and os.path.exists(drawing_abs):
+        if not parsed.get('orientation'):
+            try:
+                from reins_pdf_parser import extract_orientation_from_pdf
+                direction, direction_source, direction_confidence = extract_orientation_from_pdf(drawing_abs)
+                if direction:
+                    parsed['orientation'] = direction
+                    parsed['orientation_source'] = direction_source
+                    parsed['orientation_confidence'] = direction_confidence
+            except Exception as e:
+                print(f'[reins orientation] 圖面朝向抽取失敗: {type(e).__name__}', flush=True)
         try:
             from reins_pdf_render import render_drawing_pdf
             out_dir = os.path.dirname(drawing_abs)
@@ -1133,6 +1143,8 @@ def _upsert_reins_listing(parsed, overview_web, drawing_web, lat, lon, drawing_i
         'age': age,
         'room_layout': parsed.get('room_layout', ''),
         'orientation': parsed.get('orientation', ''),
+        'orientation_source': parsed.get('orientation_source', 'overview_field' if parsed.get('orientation') else ''),
+        'orientation_confidence': float(parsed.get('orientation_confidence') or (1.0 if parsed.get('orientation') else 0)),
         'floor': int(parsed.get('floor') or 0),
         'floors_above': int(parsed.get('floors_above') or 0),
         'total_floors': int(parsed.get('floors_above') or 0),
@@ -1194,7 +1206,7 @@ def _upsert_reins_listing(parsed, overview_web, drawing_web, lat, lon, drawing_i
             lid = 'REINS' + _dt.now(_tz.utc).strftime('%Y%m%d%H%M%S') + _uuid.uuid4().hex[:4].upper()
             fields['id'] = lid
             fields['reins_id'] = reins_id
-            fields['status'] = 'published'   # REINS 匯入直接 published（佢哋係現成放盤）
+            fields['status'] = 'draft'   # 新匯入必須經中介確認先發布
             fields['created_at'] = now_iso
             cols = ', '.join(fields.keys())
             placeholders = ', '.join('?' for _ in fields)

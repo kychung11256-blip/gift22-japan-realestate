@@ -124,6 +124,45 @@ def _price_to_man(s):
     return _to_int(s)
 
 
+_DIRECTIONS = ("南東", "南西", "北東", "北西", "南", "北", "東", "西")
+
+
+def infer_orientation_from_text(value):
+    """Read an orientation only when the surrounding label is explicit."""
+    text = re.sub(r"\s+", "", str(value or ""))
+    patterns = (
+        r"(?:バルコニー方向|主要採光面|開口部方向|方角|朝向)[:：]?(?:朝|向)?(南東|南西|北東|北西|南|北|東|西)",
+        r"(南東|南西|北東|北西|南|北|東|西)(?:向き|向|面バルコニー)",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if match:
+            return match.group(1)
+    return ""
+
+
+def extract_orientation_from_pdf(path, allow_ocr=True):
+    """Extract labelled orientation from PDF text, then OCR image-only pages."""
+    doc = pymupdf.open(path)
+    try:
+        for page in doc:
+            direction = infer_orientation_from_text(page.get_text())
+            if direction:
+                return direction, "pdf_text", 0.9
+        if allow_ocr:
+            for page in doc:
+                try:
+                    textpage = page.get_textpage_ocr(language="jpn+eng", dpi=150, full=True)
+                    direction = infer_orientation_from_text(page.get_text(textpage=textpage))
+                    if direction:
+                        return direction, "pdf_ocr", 0.75
+                except Exception:
+                    continue
+    finally:
+        doc.close()
+    return "", "missing", 0.0
+
+
 def parse_overview_pdf(path):
     """
     Parse REINS 概要 PDF → dict。
@@ -133,6 +172,7 @@ def parse_overview_pdf(path):
     try:
         page = doc[0]
         spans = _spans(page)
+        page_text = page.get_text()
     finally:
         doc.close()
 
@@ -152,7 +192,7 @@ def parse_overview_pdf(path):
     floors_above_raw = _right_value(spans, '地上階層')
     total_units_raw = _left_value(spans, '棟総戸数')
     underground_raw = _right_value(spans, '地下階層')
-    orientation = _left_value(spans, 'バルコニー方向')
+    orientation = _left_value(spans, 'バルコニー方向') or infer_orientation_from_text(page_text)
     balcony_raw = _right_value(spans, 'バルコニー面積')
 
     # --- schema 相容欄位（舊 parse_overview_pdf 有回傳嘅） ---

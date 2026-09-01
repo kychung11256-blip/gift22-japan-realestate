@@ -325,7 +325,7 @@ async function doSearch(){
   try{
     const r=await fetch('/api/search?q='+encodeURIComponent(q));
     const data=await r.json();
-    if(data.listings&&data.listings.length>0){showResults(data.listings,`「${q}」`);return;}
+    if(Array.isArray(data.listings)){showResults(data.listings,`「${q}」`);return;}
   }catch(e){}
   try{
     const r=await fetch('/api/search');
@@ -486,7 +486,7 @@ function showResults(results,query){
         <div class="text-2xl font-bold mb-1">${(p.price||0).toLocaleString()}<span class="text-sm text-dim">万</span></div>
         <div class="text-xs text-dim mb-2">${p.price_per_sqm||0}万円/m2 - ${p.size_sqm||0}m2 - ${p.room_layout||''} - 築${p.age||0}年</div>
         <div class="flex flex-wrap gap-1 mb-2">
-          <span class="text-[10px] px-2 py-0.5 rounded-full bg-good/10 text-good font-semibold">${p.orientation||''}向</span>
+          ${(p.effective_orientation||p.orientation)?`<span class="text-[10px] px-2 py-0.5 rounded-full bg-good/10 text-good font-semibold">${p.effective_orientation||p.orientation}向</span>`:'<span class="text-[10px] px-2 py-0.5 rounded-full bg-warn/10 text-warn font-semibold">朝向待確認</span>'}
           <span class="text-[10px] px-2 py-0.5 rounded-full bg-info/10 text-info font-semibold">${p.structure||''}</span>
           <span class="text-[10px] px-2 py-0.5 rounded-full ${(p.yield_surface||0)>=5?'bg-warn/10 text-warn':'bg-info/10 text-info'} font-semibold">表面${p.yield_surface||0}%</span>
         </div>
@@ -496,7 +496,7 @@ function showResults(results,query){
           ${riskBadge(p.disaster_liquefaction||p.disaster?.liquefaction||'low','液状化')}
           ${riskBadge(p.disaster_tsunami||p.disaster?.tsunami||'low','津波')}
         </div>
-        <div class="text-xs text-dim mt-2">${p.floor||0}階 / ${p.total_floors||0}階建 - ${p.land_rights||''} - ${p.source==='mysok'?'マイソク':p.source==='upload'?'仲介':'マイソク'}</div>
+        <div class="text-xs text-dim mt-2">${p.floor||0}階 / ${p.total_floors||0}階建 · ${p.land_rights||''} · <span class="font-semibold text-gold">${p.listing_role_label||'身份待確認'}</span></div>
       </a>
     `).join('');
   }

@@ -455,7 +455,9 @@ def optimize_transit(origin: dict[str, Any], stops: list[dict[str, Any]], depart
         result["routeGeometry"] = route_geometry
         result["routeBounds"] = geometry_bounds(route_geometry)
     result["warnings"] = warnings
-    return result\n\ndef _routes_waypoint(place: dict[str, Any]) -> dict[str, Any]:
+    return result
+
+def _routes_waypoint(place: dict[str, Any]) -> dict[str, Any]:
     return {"waypoint": {"location": {"latLng": {"latitude": float(place["lat"]), "longitude": float(place["lon"])}}}}
 
 
@@ -516,7 +518,9 @@ def google_transit_route(origin: dict[str, Any], destination: dict[str, Any], de
         raise ViewingPlanError("Google Routes API Compute Routes 未提供 transit polyline；系統唔會畫假路線。", 502, "PROVIDER_ERROR")
     result = {"type": "LineString", "coordinates": coords, "durationSeconds": duration_seconds}
     _transit_route_cache[cache_key] = result
-    return result\n\ndef google_transit_matrix(origin: dict[str, Any], stops: list[dict[str, Any]], departure: datetime) -> list[list[int]]:
+    return result
+
+def google_transit_matrix(origin: dict[str, Any], stops: list[dict[str, Any]], departure: datetime) -> list[list[int]]:
     nodes = [origin] + stops
     payload = {
         "origins": [_routes_waypoint(x) for x in nodes],

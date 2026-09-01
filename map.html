@@ -15,9 +15,9 @@ tailwind.config={theme:{extend:{fontFamily:{sans:['Geist','system-ui','sans-seri
 </script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:#f4f6f3;color:#fff;font-family:'Geist',system-ui,sans-serif}
+body{background:#f4f6f3;color:#12221d;font-family:'Geist',system-ui,sans-serif}
 #map{width:100%;height:calc(100vh - 56px)}
-.maplibregl-popup-content{background:#ffffff!important;color:#fff!important;border:1px solid #dfe7e3!important;border-radius:12px!important;padding:12px!important;font-family:'Geist',system-ui,sans-serif!important}
+.maplibregl-popup-content{background:#ffffff!important;color:#12221d!important;border:1px solid #dfe7e3!important;border-radius:12px!important;padding:12px!important;font-family:'Geist',system-ui,sans-serif!important}
 .maplibregl-popup-tip{border-top-color:#ffffff!important}
 .maplibregl-popup-close-button{color:#68776f!important;font-size:16px!important}
 .layer-toggle{background:#ffffff;border:1px solid #dfe7e3;border-radius:8px;padding:6px 10px;cursor:pointer;font-size:11px;transition:all .15s;color:#68776f}
@@ -37,7 +37,7 @@ body{background:#f4f6f3;color:#fff;font-family:'Geist',system-ui,sans-serif}
 .route-total{margin-top:8px;padding:8px;background:#edf1ee;border-radius:8px;font-size:12px;color:#164d3d;font-weight:600}
 .route-setup{padding:8px;border:1px solid #dfe7e3;border-radius:8px;margin-bottom:8px;background:#edf1ee}
 .route-setup label{display:block;font-size:10px;color:#68776f;margin-bottom:4px}
-.route-setup input,.route-setup select{width:100%;background:#f4f6f3;border:1px solid #dfe7e3;border-radius:8px;color:#fff;padding:6px 8px;font-size:11px;outline:none;margin-bottom:6px}
+.route-setup input,.route-setup select{width:100%;background:#f4f6f3;border:1px solid #dfe7e3;border-radius:8px;color:#12221d;padding:6px 8px;font-size:11px;outline:none;margin-bottom:6px}
 .route-setup input:focus,.route-setup select:focus{border-color:#164d3d}
 .route-setup .row{display:flex;gap:6px}
 .route-setup .row>div{flex:1}
@@ -47,6 +47,8 @@ body{background:#f4f6f3;color:#fff;font-family:'Geist',system-ui,sans-serif}
 .route-origin-ok{font-size:10px;color:#36a77b;margin-bottom:6px}
 #planRouteBtn{width:100%;padding:9px;border-radius:8px;border:none;background:#164d3d;color:#f4f6f3;font-weight:700;font-size:12px;cursor:pointer;transition:opacity .2s}
 #planRouteBtn:disabled{opacity:.35;cursor:not-allowed}
+#mapStatus{font-size:10px;color:#68776f;padding:4px 7px;border:1px solid #dfe7e3;border-radius:999px;background:#fff}
+#mapStatus.warn{color:#9a5b1f;border-color:#e7c99d;background:#fff8ed}
 </style>
 <link rel="stylesheet" href="/vendor/workbench-theme.css">
 </head>
@@ -64,12 +66,14 @@ body{background:#f4f6f3;color:#fff;font-family:'Geist',system-ui,sans-serif}
   </div>
   <div class="flex items-center gap-1.5 flex-wrap" id="layerToggles"></div>
   <button id="routeModeBtn" class="layer-toggle" onclick="toggleRouteMode()" style="border-left:3px solid #36a77b">路線規劃</button>
+  <span id="mapStatus">檢查功能中…</span>
 </div>
 <div id="map"></div>
 <div id="routePanel"></div>
 
 <script>
 const DISASTER_COLORS={flood:'#FF6B35',storm_surge:'#FF4500',tsunami:'#1E90FF',landslide:'#FFD700'};
+let mapCapabilities={baseMap:true,routeConfigured:false,hazardLayersConfigured:false};
 const LAYER_DEFS=[
   {id:'zoning',label:'用途地域',color:'#164d3d'},
   {id:'flood',label:'洪水',color:'#FF6B35'},
@@ -81,6 +85,24 @@ const LAYER_DEFS=[
 document.getElementById('layerToggles').innerHTML=LAYER_DEFS.map(l=>
   `<button class="layer-toggle" data-layer="${l.id}" onclick="toggleLayer('${l.id}')" style="border-left:3px solid ${l.color}">${l.label}</button>`
 ).join('');
+
+async function loadMapCapabilities(){
+  const status=document.getElementById('mapStatus');
+  try{
+    const response=await fetch('/api/map-status');
+    mapCapabilities=await response.json();
+    document.querySelectorAll('[data-layer]').forEach(btn=>btn.disabled=!mapCapabilities.hazardLayersConfigured);
+    document.getElementById('routeModeBtn').disabled=!mapCapabilities.routeConfigured;
+    const unavailable=[];
+    if(!mapCapabilities.hazardLayersConfigured)unavailable.push('災害圖層');
+    if(!mapCapabilities.routeConfigured)unavailable.push('路線規劃');
+    status.textContent=unavailable.length?'待設定：'+unavailable.join('、'):'地圖功能已連線';
+    status.classList.toggle('warn',unavailable.length>0);
+  }catch(e){
+    status.textContent='地圖配置狀態讀取失敗';
+    status.classList.add('warn');
+  }
+}
 
 // Use GSI pale basemap (clean, high-res 512px tiles, no POI clutter)
 const map=new maplibregl.Map({
@@ -158,6 +180,7 @@ async function loadLayerData(layerId){
 }
 
 async function toggleLayer(layerId){
+  if(!mapCapabilities.hazardLayersConfigured)return;
   const btn=document.querySelector(`[data-layer="${layerId}"]`);
   if(activeLayers[layerId]){
     if(map.getLayer(layerId+'-fill'))map.removeLayer(layerId+'-fill');
@@ -191,7 +214,7 @@ async function toggleLayer(layerId){
   }
 }
 
-map.on('load',loadMarkers);
+map.on('load',()=>{loadMarkers();loadMapCapabilities();});
 
 // ===== Route planning mode =====
 let routeMode=false;
@@ -200,6 +223,7 @@ window.selectedIds=selectedIds;
 let routeLayerAdded=false;
 
 function toggleRouteMode(){
+  if(!mapCapabilities.routeConfigured)return;
   routeMode=!routeMode;
   const btn=document.getElementById('routeModeBtn');
   btn.classList.toggle('active',routeMode);

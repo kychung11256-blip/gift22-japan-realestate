@@ -233,6 +233,7 @@ def standardize_property(row):
         "listingRole": role["code"],
         "listingRoleLabel": role["label"],
         "listingRoleEvidence": role["evidence"],
+        "clientAssignments": data.get("_client_assignments") if isinstance(data.get("_client_assignments"), list) else [],
         "structure": structure,
         "status": status,
         "features": _features(data),

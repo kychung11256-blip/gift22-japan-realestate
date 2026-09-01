@@ -102,6 +102,28 @@ def init_db():
             created_at TEXT DEFAULT (datetime('now'))
         );
 
+        CREATE TABLE IF NOT EXISTS clients (
+            id TEXT PRIMARY KEY,
+            agent_id TEXT NOT NULL DEFAULT 'agent_001',
+            name TEXT NOT NULL,
+            requirement_text TEXT DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','closed')),
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS client_shortlists (
+            client_id TEXT NOT NULL,
+            listing_id TEXT NOT NULL,
+            search_query TEXT DEFAULT '',
+            note TEXT DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now')),
+            PRIMARY KEY (client_id, listing_id),
+            FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
+            FOREIGN KEY (listing_id) REFERENCES listings(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_client_shortlists_listing ON client_shortlists(listing_id);
         CREATE INDEX IF NOT EXISTS idx_listings_status ON listings(status);
         CREATE INDEX IF NOT EXISTS idx_listings_agent ON listings(agent_id);
         CREATE INDEX IF NOT EXISTS idx_listings_price ON listings(price);

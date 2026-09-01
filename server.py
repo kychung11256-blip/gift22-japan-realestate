@@ -3,10 +3,11 @@ Flask backend for Johnny AI Platform.
 JSON API: search, detail, upload, confirm, dashboard stats.
 """
 
-import os, sys, json, uuid, random, threading, time, urllib.request, gzip as _gzip_mod, hmac
+import os, sys, json, uuid, random, threading, time, urllib.request, gzip as _gzip_mod, hmac, traceback
 from datetime import datetime, timezone
 from functools import wraps
 from flask import Flask, jsonify, request, send_from_directory, Response, make_response
+from werkzeug.exceptions import HTTPException
 
 # Load .env file manually if present
 env_path = os.path.join(os.path.dirname(__file__), '.env')
@@ -39,6 +40,58 @@ app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB
 
 
+def _request_id():
+    rid = request.headers.get('X-Request-ID') or request.environ.get('HTTP_X_REQUEST_ID') or ''
+    rid = ''.join(ch for ch in str(rid) if ch.isalnum() or ch in '-_')[:80]
+    return rid or 'REQ-' + uuid.uuid4().hex[:10].upper()
+
+
+def _json_error(message, status=500, error_code='ERROR', request_id=None):
+    payload = {'code': 0, 'error': message, 'errorCode': error_code}
+    if request_id:
+        payload['requestId'] = request_id
+    resp = jsonify(payload)
+    resp.status_code = int(status or 500)
+    resp.headers['Content-Type'] = 'application/json; charset=utf-8'
+    if request_id:
+        resp.headers['X-Request-ID'] = request_id
+    return resp
+
+
+def _is_planner_api_path(path=None):
+    path = path or request.path
+    return path.startswith('/api/v1/viewing-plans') or path.startswith('/api/share/viewing/')
+
+
+@app.errorhandler(HTTPException)
+def _json_http_error(e):
+    if _is_planner_api_path():
+        rid = _request_id()
+        status = int(getattr(e, 'code', 500) or 500)
+        code_map = {400: 'VALIDATION_ERROR', 401: 'AUTH_REQUIRED', 403: 'FORBIDDEN', 404: 'NOT_FOUND', 405: 'METHOD_NOT_ALLOWED', 429: 'RATE_LIMITED'}
+        msg_map = {
+            400: '請求格式不正確。',
+            401: '請先登入 Workbench。',
+            403: '你無權操作呢個睇樓路線。',
+            404: '搵唔到指定睇樓路線 API 或資源。',
+            405: '呢個睇樓路線 API 不支援此 HTTP 方法。',
+            429: '請求太頻密，請稍後再試。',
+        }
+        return _json_error(msg_map.get(status, '睇樓路線 API 發生錯誤。'), status, code_map.get(status, 'HTTP_ERROR'), rid)
+    return e
+
+
+@app.errorhandler(Exception)
+def _json_unexpected_error(e):
+    if isinstance(e, HTTPException):
+        return _json_http_error(e)
+    if _is_planner_api_path():
+        rid = _request_id()
+        app.logger.error('[planner_api] request_id=%s path=%s unexpected=%s\n%s', rid, request.path, type(e).__name__, traceback.format_exc())
+        return _json_error(f'睇樓路線伺服器發生未預期錯誤，請用 request id {rid} 俾工程師追查。', 500, 'INTERNAL_ERROR', rid)
+    raise e
+
+
 def _workbench_auth_required(view):
     """Fail-closed HTTP Basic protection for the private workbench and v1 API."""
     @wraps(view)
@@ -46,6 +99,8 @@ def _workbench_auth_required(view):
         expected_user = os.environ.get('WORKBENCH_USER', 'johnny')
         expected_password = os.environ.get('WORKBENCH_PASSWORD', '')
         if not expected_password:
+            if _is_planner_api_path():
+                return _json_error('Workbench 登入密碼未設定，請先設定 WORKBENCH_PASSWORD。', 503, 'AUTH_NOT_CONFIGURED', _request_id())
             return Response('Property workbench is not configured.', status=503)
 
         auth = request.authorization
@@ -55,6 +110,8 @@ def _workbench_auth_required(view):
             and hmac.compare_digest(auth.password or '', expected_password)
         )
         if not valid:
+            if _is_planner_api_path():
+                return _json_error('請先登入 Workbench。', 401, 'AUTH_REQUIRED', _request_id())
             return Response(
                 'Authentication required.',
                 status=401,
@@ -2503,7 +2560,7 @@ from viewing_planner import (
 
 def _planner_error(e):
     status = getattr(e, 'status', 400)
-    return jsonify({'code': 0, 'error': getattr(e, 'message', str(e)), 'errorCode': getattr(e, 'code', 'ERROR')}), status
+    return _json_error(getattr(e, 'message', str(e)), status, getattr(e, 'code', 'ERROR'), _request_id())
 
 
 def _load_plan(plan_id=None, token=None, include_revoked=False, public=False):
@@ -2756,7 +2813,7 @@ def v1_viewing_plans():
 def v1_viewing_plan_detail(plan_id):
     plan = _load_plan(plan_id)
     if not plan:
-        return jsonify({'code': 0, 'error': 'Viewing plan not found'}), 404
+        return _json_error('搵唔到指定睇樓路線。', 404, 'NOT_FOUND', _request_id())
     return jsonify({'code': 1, 'plan': plan})
 
 
@@ -2767,7 +2824,7 @@ def v1_viewing_share(plan_id):
     row = conn.execute('SELECT id FROM viewing_plans WHERE id=?', (plan_id,)).fetchone()
     if not row:
         conn.close()
-        return jsonify({'code': 0, 'error': 'Viewing plan not found'}), 404
+        return _json_error('搵唔到指定睇樓路線。', 404, 'NOT_FOUND', _request_id())
     now = datetime.now(timezone.utc).isoformat()
     if request.method == 'DELETE':
         conn.execute('UPDATE viewing_plans SET share_revoked_at=?, updated_at=? WHERE id=?', (now, now, plan_id))
@@ -2781,10 +2838,10 @@ def v1_viewing_share(plan_id):
 @app.route('/api/share/viewing/<token>')
 def viewing_share_api(token):
     if not token or len(token) < 32:
-        return jsonify({'code': 0, 'error': 'Share link not found'}), 404
+        return _json_error('搵唔到分享連結，或者連結已撤回。', 404, 'NOT_FOUND', _request_id())
     plan = _load_plan(token=token, public=True)
     if not plan:
-        return jsonify({'code': 0, 'error': 'Share link not found or revoked'}), 404
+        return _json_error('搵唔到分享連結，或者連結已撤回。', 404, 'NOT_FOUND', _request_id())
     resp = jsonify({'code': 1, 'plan': plan})
     resp.headers['X-Robots-Tag'] = 'noindex, nofollow'
     return resp

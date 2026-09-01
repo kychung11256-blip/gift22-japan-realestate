@@ -5,7 +5,7 @@ import pytest
 
 import db
 import server
-from viewing_planner import ViewingPlanError, decode_polyline, geometry_bounds, nearest_neighbor_order, optimize_driving, optimize_transit
+from viewing_planner import ViewingPlanError, decode_polyline, geometry_bounds, google_transit_matrix, nearest_neighbor_order, optimize_driving, optimize_transit
 
 
 def auth_header():
@@ -179,6 +179,46 @@ def test_transit_multileg_geometry_and_unavailable_warning(monkeypatch):
     res2 = optimize_transit(origin, stops, server.datetime.now(server.timezone.utc), 45, matrix_provider=None, manual_order=True)
     assert not res2.get("routeGeometry")
     assert "不會畫假路線" in res2["warnings"][0]["message"]
+
+
+def test_google_transit_request_denied_is_specific_config_error(monkeypatch):
+    monkeypatch.setattr('viewing_planner.GOOGLE_MAPS_API_KEY', 'configured-for-test')
+    monkeypatch.setattr('viewing_planner._google_get', lambda url: {"status": "REQUEST_DENIED", "error_message": "This API key is not authorized to use this service or API."})
+    origin = {"lat": 35.0, "lon": 139.0, "label": "start"}
+    stops = [{"id": "A", "listingId": "A", "lat": 35.1, "lon": 139.1}]
+    with pytest.raises(ViewingPlanError) as exc:
+        google_transit_matrix(origin, stops, server.datetime.now(server.timezone.utc))
+    assert exc.value.status == 502
+    assert exc.value.code == "PROVIDER_CONFIG_ERROR"
+    assert "Distance Matrix API" in exc.value.message
+    assert "API key 未獲授權" in exc.value.message
+
+
+def test_planner_unexpected_exception_returns_json_envelope(app_client, monkeypatch):
+    headers = auth_header()
+    def boom(_data):
+        raise RuntimeError("simulated broken provider")
+    monkeypatch.setattr(server, "_optimize_payload", boom)
+    resp = app_client.post("/api/v1/viewing-plans/optimize", headers={**headers, "X-Request-ID": "TEST-REQ-500"}, json=payload())
+    assert resp.status_code == 500
+    assert resp.content_type.startswith("application/json")
+    data = resp.get_json()
+    assert data["code"] == 0
+    assert data["errorCode"] == "INTERNAL_ERROR"
+    assert data["requestId"] == "TEST-REQ-500"
+    assert "TEST-REQ-500" in data["error"]
+
+
+def test_planner_404_405_json_envelope(app_client):
+    headers = auth_header()
+    missing = app_client.get("/api/v1/viewing-plans/VP-NOPE", headers=headers)
+    assert missing.status_code == 404
+    assert missing.content_type.startswith("application/json")
+    assert missing.get_json()["errorCode"] == "NOT_FOUND"
+    method = app_client.put("/api/v1/viewing-plans/optimize", headers=headers, json=payload())
+    assert method.status_code == 405
+    assert method.content_type.startswith("application/json")
+    assert method.get_json()["errorCode"] == "METHOD_NOT_ALLOWED"
 
 
 def test_save_reopen_share_revocation_regeneration_and_no_status_mutation(app_client, monkeypatch):

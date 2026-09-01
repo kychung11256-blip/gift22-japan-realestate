@@ -18,6 +18,7 @@ import os
 import secrets
 import urllib.parse
 import urllib.request
+import urllib.error
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
@@ -252,6 +253,22 @@ def _google_get(url: str, timeout: int = 25) -> dict[str, Any]:
         return json.loads(resp.read())
 
 
+def _provider_error_message(service: str, status: str | None, detail: str = "") -> tuple[str, str]:
+    status = status or "UNKNOWN"
+    detail = (detail or "").strip()
+    if status == "REQUEST_DENIED":
+        return (
+            f"Google {service} 拒絕請求（REQUEST_DENIED）：staging 使用緊嘅 Google API key 未獲授權使用 {service}。請在 Google Cloud Console 啟用對應 API，並在 API key restrictions 加入 {service}；毋須改房源資料。",
+            "PROVIDER_CONFIG_ERROR",
+        )
+    if status in {"OVER_QUERY_LIMIT", "RESOURCE_EXHAUSTED"}:
+        return (f"Google {service} 配額／限流（{status}）：請檢查 Google Cloud quota 或 billing；系統唔會估算時間。", "PROVIDER_QUOTA")
+    if status in {"ZERO_RESULTS", "NOT_FOUND"}:
+        return (f"Google {service} 未支援其中一段路線（{status}）；系統唔會估算時間或畫假路線。", "PROVIDER_UNSUPPORTED_ROUTE")
+    extra = f"：{detail}" if detail else ""
+    return (f"Google {service} 回應錯誤（{status}）{extra}；系統唔會估算時間。", "PROVIDER_ERROR")
+
+
 def optimize_driving(origin: dict[str, Any], stops: list[dict[str, Any]], departure: datetime, duration_min: int, google_get: Callable[[str], dict[str, Any]] | None = None, optimize_waypoints: bool = True, end_location: dict[str, Any] | None = None) -> dict[str, Any]:
     if not GOOGLE_MAPS_API_KEY:
         raise ViewingPlanError("GOOGLE_MAPS_API_KEY 未設定；未能使用 Google Directions waypoint optimization，唔會估算行車時間。", 503, "PROVIDER_NOT_CONFIGURED")
@@ -274,10 +291,13 @@ def optimize_driving(origin: dict[str, Any], stops: list[dict[str, Any]], depart
     url = "https://maps.googleapis.com/maps/api/directions/json?" + urllib.parse.urlencode(params, safe="|,:" )
     try:
         g = google_get(url)
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
+        raise ViewingPlanError(f"Google Directions upstream 回應異常／非 JSON（{type(e).__name__}）；請檢查網絡、API 啟用狀態或配額，系統唔會估算行車時間。", 502, "PROVIDER_UPSTREAM_ERROR")
     except Exception as e:
-        raise ViewingPlanError(f"Google Directions 呼叫失敗：{e}", 502, "PROVIDER_ERROR")
+        raise ViewingPlanError(f"Google Directions 呼叫失敗（{type(e).__name__}）；請檢查 provider 設定，系統唔會估算行車時間。", 502, "PROVIDER_ERROR")
     if g.get("status") != "OK" or not g.get("routes"):
-        raise ViewingPlanError(f"Google Directions 限制／錯誤：{g.get('status')} {g.get('error_message','')}", 502, "PROVIDER_ERROR")
+        msg, code = _provider_error_message("Directions API", g.get("status"), g.get("error_message", ""))
+        raise ViewingPlanError(msg, 502, code)
     route = g["routes"][0]
     wp_order = route.get("waypoint_order", list(range(len(middle))))
     if end_location:
@@ -397,10 +417,13 @@ def google_transit_matrix(origin: dict[str, Any], stops: list[dict[str, Any]], d
     url = "https://maps.googleapis.com/maps/api/distancematrix/json?" + urllib.parse.urlencode(params, safe="|,:")
     try:
         g = _google_get(url)
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
+        raise ViewingPlanError(f"Google Distance Matrix upstream 回應異常／非 JSON（{type(e).__name__}）；請檢查網絡、API 啟用狀態或配額，系統唔會估算公共交通時間。", 502, "PROVIDER_UPSTREAM_ERROR")
     except Exception as e:
-        raise ViewingPlanError(f"Google Distance Matrix 呼叫失敗：{e}", 502, "PROVIDER_ERROR")
+        raise ViewingPlanError(f"Google Distance Matrix 呼叫失敗（{type(e).__name__}）；請檢查 provider 設定，系統唔會估算公共交通時間。", 502, "PROVIDER_ERROR")
     if g.get("status") != "OK":
-        raise ViewingPlanError(f"Google Distance Matrix 限制／錯誤：{g.get('status')} {g.get('error_message','')}", 502, "PROVIDER_ERROR")
+        msg, code = _provider_error_message("Distance Matrix API", g.get("status"), g.get("error_message", ""))
+        raise ViewingPlanError(msg, 502, code)
     matrix: list[list[int]] = []
     for row in g.get("rows", []):
         vals = []

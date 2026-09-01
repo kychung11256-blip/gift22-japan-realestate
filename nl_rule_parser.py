@@ -80,6 +80,19 @@ def parse_rule_based(query):
     if not query or not query.strip():
         return None
     q = query.strip()
+    # Accept Traditional Chinese administrative suffixes used by Hong Kong agents.
+    # REINS itself expects Japanese forms such as 新宿区 / 東京都.
+    q = q.translate(str.maketrans({
+        '區': '区',
+        '縣': '県',
+        '臺': '台',
+    }))
+    location_aliases = {
+        '澀谷区': '渋谷区',
+        '練馬区': '練馬区',
+    }
+    for alias, japanese in location_aliases.items():
+        q = q.replace(alias, japanese)
     plan_hf = {}
     soft = []
     matched_any = False

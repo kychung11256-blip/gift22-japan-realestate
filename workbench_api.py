@@ -8,6 +8,8 @@ import json
 import re
 import unicodedata
 
+from property_search import infer_direction, listing_role
+
 
 PRICE_RAW_YEN_THRESHOLD = 10_000_000
 ALLOWED_STATUSES = {"draft", "published", "archived", "lead"}
@@ -165,6 +167,49 @@ def standardize_property(row):
     if status not in ALLOWED_STATUSES:
         status = "draft"
 
+    direction, direction_source, direction_confidence = infer_direction(data)
+    role = listing_role(data)
+    details = {
+        "buildingName": _nfkc(data.get("building_name")),
+        "propertyType": _nfkc(data.get("type")),
+        "landRights": _nfkc(data.get("land_rights")),
+        "ownershipType": _nfkc(data.get("ownership_type")),
+        "currentStatus": _nfkc(data.get("current_status")),
+        "handoverTiming": _nfkc(data.get("handover_timing")),
+        "transactionType": _nfkc(data.get("transaction_type")),
+        "commissionType": _nfkc(data.get("commission_type")),
+        "repairReserveYen": _money_to_int(data.get("repair_reserve")),
+        "balconySqm": float(data.get("balcony_sqm") or 0),
+        "totalUnits": int(data.get("total_units") or 0),
+        "managementCompany": _nfkc(data.get("management_company")),
+        "managementType": _nfkc(data.get("management_type")),
+        "roofType": _nfkc(data.get("roof_type")),
+        "undergroundFloors": int(data.get("underground_floors") or 0),
+        "listingAgentName": _nfkc(data.get("listing_agent_name")),
+        "licenseNumber": _nfkc(data.get("license_number")),
+        "brokerageType": _nfkc(data.get("brokerage_type")),
+        "landAreaSqm": float(data.get("land_area_sqm") or 0),
+        "landAreaTsubo": float(data.get("land_area_tsubo") or 0),
+        "landCategory": _nfkc(data.get("land_category")),
+        "buildingCoverageRatio": int(data.get("building_coverage_ratio") or 0),
+        "floorAreaRatio": int(data.get("floor_area_ratio") or 0),
+        "cityPlanningZone": _nfkc(data.get("city_planning_zone")),
+        "useDistrict": _nfkc(data.get("use_district")),
+        "totalFloorAreaSqm": float(data.get("total_floor_area_sqm") or 0),
+        "totalFloorAreaTsubo": float(data.get("total_floor_area_tsubo") or 0),
+        "notes": _nfkc(data.get("notes_freetext")),
+        "latitude": float(data.get("latitude") or 0),
+        "longitude": float(data.get("longitude") or 0),
+        "disasterFlood": _nfkc(data.get("disaster_flood")),
+        "disasterEarthquake": _nfkc(data.get("disaster_earthquake")),
+        "disasterLiquefaction": _nfkc(data.get("disaster_liquefaction")),
+        "disasterTsunami": _nfkc(data.get("disaster_tsunami")),
+        "reinsOverviewPdf": _text(data.get("reins_overview_pdf")),
+        "reinsDrawingPdf": _text(data.get("reins_drawing_pdf")),
+        "reinsRegisteredAt": _text(data.get("reins_registered_at")),
+        "reinsUpdatedAt": _text(data.get("reins_updated_at")),
+    }
+
     result = {
         "id": _text(data.get("id")),
         "source": _text(data.get("source")) or "upload",
@@ -182,11 +227,17 @@ def standardize_property(row):
         "floor": int(data.get("floor") or 0) or None,
         "totalFloors": int(data.get("total_floors") or data.get("floors_above") or 0) or None,
         "builtAt": built_at,
-        "direction": _nfkc(data.get("orientation")),
+        "direction": direction,
+        "directionSource": direction_source,
+        "directionConfidence": direction_confidence,
+        "listingRole": role["code"],
+        "listingRoleLabel": role["label"],
+        "listingRoleEvidence": role["evidence"],
         "structure": structure,
         "status": status,
         "features": _features(data),
         "images": images,
+        "details": details,
         "updatedAt": _iso_datetime(data.get("updated_at")),
     }
 

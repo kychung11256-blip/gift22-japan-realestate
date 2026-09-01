@@ -5,6 +5,7 @@ from property_search import (
     parse_query,
 )
 from reins_pdf_parser import infer_orientation_from_text
+from nl_rule_parser import parse_rule_based
 from workbench_api import standardize_property
 
 
@@ -82,3 +83,11 @@ def test_workbench_exposes_role_direction_and_complete_details():
 def test_query_parser_returns_explicit_constraints():
     assert parse_query("3億以下 朝向朝南")["price_max"] == 30000
     assert parse_query("3億以下 朝向朝南")["direction"] == "南"
+
+
+def test_reins_search_accepts_traditional_chinese_ward_suffix():
+    plan = parse_rule_based("新宿區 3億以下 朝向朝南")
+    assert plan["hard_filters"]["pref"] == "東京都"
+    assert plan["hard_filters"]["city"] == "新宿区"
+    assert plan["hard_filters"]["price_max"] == 30000
+    assert plan["hard_filters"]["orientation"] == ["南"]

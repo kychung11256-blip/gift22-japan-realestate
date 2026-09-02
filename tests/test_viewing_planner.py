@@ -6,7 +6,7 @@ import pytest
 import db
 import server
 import viewing_planner
-from viewing_planner import ViewingPlanError, decode_polyline, geometry_bounds, google_transit_matrix, google_transit_route, nearest_neighbor_order, optimize_driving, optimize_transit, parse_date_time, parse_iso
+from viewing_planner import UNREACHABLE_ROUTE_SECONDS, ViewingPlanError, decode_polyline, feasible_transit_order, geometry_bounds, google_transit_matrix, google_transit_route, nearest_neighbor_order, optimize_driving, optimize_transit, parse_date_time, parse_iso
 
 
 def auth_header():
@@ -130,8 +130,10 @@ def test_deterministic_transit_heuristic_and_provider_failure_no_fabrication():
         {"id": "A", "listingId": "A", "lat": 35.1, "lon": 139.1},
         {"id": "B", "listingId": "B", "lat": 35.2, "lon": 139.2},
     ]
+    result = optimize_transit(origin, stops, server.datetime.now(server.timezone.utc), 45, matrix_provider=lambda *_: [[0, 120, 0], [120, 0, 90], [0, 90, 0]])
+    assert result["listingIds"] if "listingIds" in result else [s["listingId"] for s in result["stops"]] == ["A", "B"]
     with pytest.raises(ViewingPlanError) as exc:
-        optimize_transit(origin, stops, server.datetime.now(server.timezone.utc), 45, matrix_provider=lambda *_: [[0, 120, 0], [120, 0, 90], [0, 90, 0]])
+        optimize_transit(origin, stops, server.datetime.now(server.timezone.utc), 45, matrix_provider=lambda *_: [[0, 0, 0], [0, 0, 90], [0, 90, 0]])
     assert "唔會估算" in exc.value.message
 
 
@@ -198,9 +200,11 @@ def test_google_routes_matrix_parsing_transit_geometry_and_element_failure(monke
         return {}
     monkeypatch.setattr('viewing_planner._google_routes_post', bad_matrix)
     viewing_planner._transit_route_cache.clear()
+    unavailable = google_transit_matrix(origin, stops[:1], server.datetime.now(server.timezone.utc))
+    assert unavailable[0][1] == UNREACHABLE_ROUTE_SECONDS
     with pytest.raises(ViewingPlanError) as exc:
-        google_transit_matrix(origin, stops[:1], server.datetime.now(server.timezone.utc))
-    assert exc.value.code in {"PROVIDER_UNSUPPORTED_ROUTE", "PROVIDER_ERROR"}
+        optimize_transit(origin, stops[:1], server.datetime.now(server.timezone.utc), 45, matrix_provider=lambda *_: unavailable)
+    assert exc.value.code == "TRANSIT_ROUTE_UNAVAILABLE"
     assert "Google Routes API" in exc.value.message
     assert "唔會估算" in exc.value.message
 
@@ -209,7 +213,7 @@ def test_google_routes_compute_routes_polyline_parsing(monkeypatch):
     monkeypatch.setattr('viewing_planner.GOOGLE_MAPS_API_KEY', 'configured-for-test')
     def fake_routes_post(path, payload, field_mask, timeout=25):
         assert path.endswith('computeRoutes')
-        assert field_mask == 'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline'
+        assert field_mask == 'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,geocodingResults'
         assert payload['travelMode'] == 'TRANSIT'
         assert payload['departureTime'].endswith('Z')
         return {"routes": [{"duration": "123s", "polyline": {"encodedPolyline": "_p~iF~ps|U_ulLnnqC_mqNvxq`@"}}]}
@@ -249,6 +253,44 @@ def test_google_routes_matrix_route_not_found_uses_real_compute_routes(monkeypat
     assert matrix == [[0, 420], [420, 0]]
     assert len([c for c in calls if "computeRouteMatrix" in c["path"]]) == 1
     assert len([c for c in calls if "computeRoutes" in c["path"]]) == 2
+
+
+def test_transit_coordinate_route_not_found_retries_real_db_address(monkeypatch):
+    monkeypatch.setattr("viewing_planner.GOOGLE_MAPS_API_KEY", "configured-for-test")
+    viewing_planner._transit_route_cache.clear()
+    calls = []
+
+    def coordinate_fails_address_succeeds(path, payload, field_mask, timeout=25):
+        calls.append({"path": path, "payload": payload, "field_mask": field_mask})
+        if "computeRouteMatrix" in path:
+            return [
+                {"originIndex": 0, "destinationIndex": 0},
+                {"originIndex": 0, "destinationIndex": 1, "status": {"code": 5, "message": "ROUTE_NOT_FOUND"}, "condition": "ROUTE_NOT_FOUND"},
+                {"originIndex": 1, "destinationIndex": 0, "status": {"code": 5, "message": "ROUTE_NOT_FOUND"}, "condition": "ROUTE_NOT_FOUND"},
+                {"originIndex": 1, "destinationIndex": 1},
+            ]
+        if "address" not in payload["origin"] and "address" not in payload["destination"]:
+            return {"routes": []}
+        return {"routes": [{"duration": "420s", "polyline": {"encodedPolyline": "_p~iF~ps|U_ulLnnqC_mqNvxq`@"}}]}
+
+    monkeypatch.setattr("viewing_planner._google_routes_post", coordinate_fails_address_succeeds)
+    departure = parse_iso("2026-09-03T01:00:00Z", "departureAt")
+    origin = {"lat": 35.681236, "lon": 139.767125, "label": "東京駅", "address": "東京駅"}
+    stops = [{"id": "REINS20260901044118B1B6", "listingId": "REINS20260901044118B1B6", "lat": 35.692627, "lon": 139.688416, "address": "東京都新宿区西新宿６丁目１５－１"}]
+    matrix = google_transit_matrix(origin, stops, departure)
+    assert matrix == [[0, 420], [420, 0]]
+    route_calls = [c for c in calls if "computeRoutes" in c["path"]]
+    assert any("address" in c["payload"]["origin"] or "address" in c["payload"]["destination"] for c in route_calls)
+    assert all(c["payload"]["regionCode"] == "jp" for c in route_calls)
+
+
+def test_transit_order_ignores_unneeded_unavailable_direction():
+    matrix = [
+        [0, 600, 900],
+        [600, 0, 500],
+        [900, UNREACHABLE_ROUTE_SECONDS, 0],
+    ]
+    assert feasible_transit_order(matrix, 2) == [0, 1]
 
 
 def test_google_transit_request_denied_is_specific_config_error(monkeypatch):

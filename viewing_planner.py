@@ -30,6 +30,7 @@ GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY", "")
 JAPAN_TZ = ZoneInfo("Asia/Tokyo")
 _geometry_cache: dict[str, dict[str, Any]] = {}
 _transit_route_cache: dict[str, dict[str, Any]] = {}
+UNREACHABLE_ROUTE_SECONDS = 10**12
 
 ALLOWED_DURATIONS = {30, 45, 60}
 ALLOWED_MODES = {"driving", "transit"}
@@ -390,6 +391,37 @@ def nearest_neighbor_order(matrix: list[list[int]], count: int) -> list[int]:
     return [i - 1 for i in order]
 
 
+def feasible_transit_order(matrix: list[list[int]], count: int) -> list[int]:
+    """Return the cheapest complete path that uses only real provider legs.
+
+    A transit matrix may legitimately contain a directional ROUTE_NOT_FOUND for
+    a pair that the final itinerary never needs.  Rejecting the whole matrix in
+    that case made valid Tokyo itineraries fail.  With at most eight properties,
+    checking every order is small (8! = 40,320) and deterministic.
+    """
+    best: tuple[int, tuple[int, ...]] | None = None
+    for order in itertools.permutations(range(1, count + 1)):
+        cur = 0
+        total = 0
+        valid = True
+        for node in order:
+            seconds = int(matrix[cur][node])
+            if seconds <= 0 or seconds >= UNREACHABLE_ROUTE_SECONDS:
+                valid = False
+                break
+            total += seconds
+            cur = node
+        if valid and (best is None or (total, order) < best):
+            best = (total, order)
+    if best is None:
+        raise ViewingPlanError(
+            "Google Routes API 未能組成一條包含全部房源嘅真實公共交通路線；系統唔會估算時間或畫假路線。",
+            422,
+            "TRANSIT_ROUTE_UNAVAILABLE",
+        )
+    return [node - 1 for node in best[1]]
+
+
 def _path_cost(matrix: list[list[int]], order_nodes: list[int]) -> int:
     cur = 0
     total = 0
@@ -406,11 +438,20 @@ def optimize_transit(origin: dict[str, Any], stops: list[dict[str, Any]], depart
     n = len(stops)
     if len(matrix) != n + 1 or any(len(row) != n + 1 for row in matrix):
         raise ViewingPlanError("公共交通 Routes API matrix 回應格式不完整，已停止，唔會估算。", 502, "PROVIDER_ERROR")
-    for r, row in enumerate(matrix):
-        for c, value in enumerate(row):
-            if r != c and (value is None or int(value) <= 0):
-                raise ViewingPlanError("公共交通 Routes API 未支援其中一段路線，已停止，唔會估算時間。", 502, "PROVIDER_UNSUPPORTED_ROUTE")
-    order_idx = list(range(n)) if manual_order else nearest_neighbor_order(matrix, n)
+    if manual_order:
+        order_idx = list(range(n))
+        cur = 0
+        for idx in order_idx:
+            node = idx + 1
+            if int(matrix[cur][node]) <= 0 or int(matrix[cur][node]) >= UNREACHABLE_ROUTE_SECONDS:
+                raise ViewingPlanError(
+                    "手動排序包含 Google Routes API 無法提供嘅公共交通路段；系統唔會估算時間。",
+                    422,
+                    "TRANSIT_ROUTE_UNAVAILABLE",
+                )
+            cur = node
+    else:
+        order_idx = feasible_transit_order(matrix, n)
     ordered = [stops[i] for i in order_idx]
     matrix_leg_minutes: list[int] = []
     cur = 0
@@ -457,8 +498,22 @@ def optimize_transit(origin: dict[str, Any], stops: list[dict[str, Any]], depart
     result["warnings"] = warnings
     return result
 
-def _routes_waypoint(place: dict[str, Any]) -> dict[str, Any]:
+def _route_address(place: dict[str, Any]) -> str:
+    value = str(place.get("address") or place.get("label") or "").strip()
+    if not value or value.startswith("__") or value == str(place.get("id") or ""):
+        return ""
+    return value
+
+
+def _routes_waypoint(place: dict[str, Any], prefer_address: bool = False) -> dict[str, Any]:
+    address = _route_address(place)
+    if prefer_address and address:
+        return {"waypoint": {"address": address}}
     return {"waypoint": {"location": {"latLng": {"latitude": float(place["lat"]), "longitude": float(place["lon"])}}}}
+
+
+def _compute_route_waypoint(place: dict[str, Any], prefer_address: bool = False) -> dict[str, Any]:
+    return _routes_waypoint(place, prefer_address=prefer_address)["waypoint"]
 
 
 def _duration_seconds(value: Any) -> int:
@@ -491,24 +546,50 @@ def google_transit_route(origin: dict[str, Any], destination: dict[str, Any], de
     cache_key = (
         f"{round(float(origin['lat']), 5)},{round(float(origin['lon']), 5)}|"
         f"{round(float(destination['lat']), 5)},{round(float(destination['lon']), 5)}|"
+        f"{_route_address(origin)}|{_route_address(destination)}|"
         f"{departure_utc.replace(second=0, microsecond=0).isoformat()}"
     )
     cached = _transit_route_cache.get(cache_key)
     if cached:
         return cached
-    payload = {
-        "origin": {"location": {"latLng": {"latitude": float(origin["lat"]), "longitude": float(origin["lon"])}}},
-        "destination": {"location": {"latLng": {"latitude": float(destination["lat"]), "longitude": float(destination["lon"])}}},
-        "travelMode": "TRANSIT",
-        "departureTime": departure_utc.isoformat().replace("+00:00", "Z"),
-        "languageCode": "zh-TW",
-        "units": "METRIC",
-    }
-    data = _google_routes_post("directions/v2:computeRoutes", payload, "routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline")
-    routes = data.get("routes") if isinstance(data, dict) else []
+    # Coordinates are fastest, but Google documents that they are snapped to a
+    # nearby road which may not be a usable property entrance.  On a genuine
+    # ROUTE_NOT_FOUND, retry with the listing address from the real DB so Routes
+    # can geocode an access point.  These are still real Google routes/times.
+    variants = [(False, False)]
+    if _route_address(destination):
+        variants.append((False, True))
+    if _route_address(origin):
+        variants.append((True, False))
+    if _route_address(origin) and _route_address(destination):
+        variants.append((True, True))
+    routes = []
+    for origin_address, destination_address in variants:
+        payload = {
+            "origin": _compute_route_waypoint(origin, origin_address),
+            "destination": _compute_route_waypoint(destination, destination_address),
+            "travelMode": "TRANSIT",
+            "departureTime": departure_utc.isoformat().replace("+00:00", "Z"),
+            "languageCode": "zh-TW",
+            "regionCode": "jp",
+            "units": "METRIC",
+        }
+        try:
+            data = _google_routes_post(
+                "directions/v2:computeRoutes",
+                payload,
+                "routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,geocodingResults",
+            )
+        except ViewingPlanError as exc:
+            if exc.code != "PROVIDER_UNSUPPORTED_ROUTE":
+                raise
+            continue
+        routes = data.get("routes") if isinstance(data, dict) else []
+        if routes:
+            break
     if not routes:
         msg, code = _provider_error_message("Routes API Compute Routes", "ROUTE_NOT_FOUND", "")
-        raise ViewingPlanError(msg, 502, code)
+        raise ViewingPlanError(msg, 422, "TRANSIT_ROUTE_UNAVAILABLE" if code == "PROVIDER_UNSUPPORTED_ROUTE" else code)
     duration_seconds = _duration_seconds(routes[0].get("duration"))
     if duration_seconds <= 0:
         raise ViewingPlanError("Google Routes API Compute Routes 未提供 transit duration；系統唔會估算。", 502, "PROVIDER_ERROR")
@@ -568,8 +649,14 @@ def google_transit_matrix(origin: dict[str, Any], stops: list[dict[str, Any]], d
             # Compute Route Matrix returns ROUTE_NOT_FOUND for the same pair.
             # Compute Routes is still the real Google Routes API; use its real
             # duration instead of rejecting the whole itinerary or estimating.
-            route_data = google_transit_route(nodes[oi], nodes[di], departure)
-            sec = _duration_seconds(route_data.get("durationSeconds"))
+            try:
+                route_data = google_transit_route(nodes[oi], nodes[di], departure)
+                sec = _duration_seconds(route_data.get("durationSeconds"))
+            except ViewingPlanError as exc:
+                if exc.code not in {"PROVIDER_UNSUPPORTED_ROUTE", "TRANSIT_ROUTE_UNAVAILABLE"}:
+                    raise
+                matrix[oi][di] = UNREACHABLE_ROUTE_SECONDS
+                continue
         elif status or (condition and condition != "ROUTE_EXISTS"):
             msg, code = _provider_error_message("Routes API Compute Route Matrix", status_name, (status or {}).get("message", "") if isinstance(status, dict) else "")
             raise ViewingPlanError(msg, 502, code)

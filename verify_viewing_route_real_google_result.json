@@ -1,0 +1,17 @@
+{
+  "status": 200,
+  "summary": {
+    "code": 1,
+    "provider": "google_directions",
+    "geometry_type": "LineString",
+    "coord_count": 342,
+    "bounds": [
+      139.68223,
+      35.67842,
+      139.76557,
+      35.71937
+    ],
+    "warnings": [],
+    "stops": 2
+  }
+}

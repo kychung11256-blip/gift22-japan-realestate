@@ -3,10 +3,11 @@ Flask backend for Johnny AI Platform.
 JSON API: search, detail, upload, confirm, dashboard stats.
 """
 
-import os, sys, json, uuid, random, threading, time, urllib.request, gzip as _gzip_mod, hmac
+import os, sys, json, uuid, random, threading, time, urllib.request, gzip as _gzip_mod, hmac, traceback
 from datetime import datetime, timezone
 from functools import wraps
-from flask import Flask, jsonify, request, send_from_directory, Response
+from flask import Flask, jsonify, request, send_from_directory, Response, make_response
+from werkzeug.exceptions import HTTPException
 
 # Load .env file manually if present
 env_path = os.path.join(os.path.dirname(__file__), '.env')
@@ -39,6 +40,58 @@ app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB
 
 
+def _request_id():
+    rid = request.headers.get('X-Request-ID') or request.environ.get('HTTP_X_REQUEST_ID') or ''
+    rid = ''.join(ch for ch in str(rid) if ch.isalnum() or ch in '-_')[:80]
+    return rid or 'REQ-' + uuid.uuid4().hex[:10].upper()
+
+
+def _json_error(message, status=500, error_code='ERROR', request_id=None):
+    payload = {'code': 0, 'error': message, 'errorCode': error_code}
+    if request_id:
+        payload['requestId'] = request_id
+    resp = jsonify(payload)
+    resp.status_code = int(status or 500)
+    resp.headers['Content-Type'] = 'application/json; charset=utf-8'
+    if request_id:
+        resp.headers['X-Request-ID'] = request_id
+    return resp
+
+
+def _is_planner_api_path(path=None):
+    path = path or request.path
+    return path.startswith('/api/v1/viewing-plans') or path.startswith('/api/share/viewing/')
+
+
+@app.errorhandler(HTTPException)
+def _json_http_error(e):
+    if _is_planner_api_path():
+        rid = _request_id()
+        status = int(getattr(e, 'code', 500) or 500)
+        code_map = {400: 'VALIDATION_ERROR', 401: 'AUTH_REQUIRED', 403: 'FORBIDDEN', 404: 'NOT_FOUND', 405: 'METHOD_NOT_ALLOWED', 429: 'RATE_LIMITED'}
+        msg_map = {
+            400: '請求格式不正確。',
+            401: '請先登入 Workbench。',
+            403: '你無權操作呢個睇樓路線。',
+            404: '搵唔到指定睇樓路線 API 或資源。',
+            405: '呢個睇樓路線 API 不支援此 HTTP 方法。',
+            429: '請求太頻密，請稍後再試。',
+        }
+        return _json_error(msg_map.get(status, '睇樓路線 API 發生錯誤。'), status, code_map.get(status, 'HTTP_ERROR'), rid)
+    return e
+
+
+@app.errorhandler(Exception)
+def _json_unexpected_error(e):
+    if isinstance(e, HTTPException):
+        return _json_http_error(e)
+    if _is_planner_api_path():
+        rid = _request_id()
+        app.logger.error('[planner_api] request_id=%s path=%s unexpected=%s\n%s', rid, request.path, type(e).__name__, traceback.format_exc())
+        return _json_error(f'睇樓路線伺服器發生未預期錯誤，請用 request id {rid} 俾工程師追查。', 500, 'INTERNAL_ERROR', rid)
+    raise e
+
+
 def _workbench_auth_required(view):
     """Fail-closed HTTP Basic protection for the private workbench and v1 API."""
     @wraps(view)
@@ -46,6 +99,8 @@ def _workbench_auth_required(view):
         expected_user = os.environ.get('WORKBENCH_USER', 'johnny')
         expected_password = os.environ.get('WORKBENCH_PASSWORD', '')
         if not expected_password:
+            if _is_planner_api_path():
+                return _json_error('Workbench 登入密碼未設定，請先設定 WORKBENCH_PASSWORD。', 503, 'AUTH_NOT_CONFIGURED', _request_id())
             return Response('Property workbench is not configured.', status=503)
 
         auth = request.authorization
@@ -55,6 +110,8 @@ def _workbench_auth_required(view):
             and hmac.compare_digest(auth.password or '', expected_password)
         )
         if not valid:
+            if _is_planner_api_path():
+                return _json_error('請先登入 Workbench。', 401, 'AUTH_REQUIRED', _request_id())
             return Response(
                 'Authentication required.',
                 status=401,
@@ -99,6 +156,11 @@ def listings_page():
 @_workbench_auth_required
 def workbench_page():
     return send_from_directory('.', 'workbench.html')
+
+@app.route('/workbench/viewing-planner')
+@_workbench_auth_required
+def viewing_planner_page():
+    return send_from_directory('.', 'viewing_planner.html')
 
 # ── Agent Platform Proxy ────────────────────────────────────────
 import urllib.request as _urllib_req
@@ -155,6 +217,7 @@ def static_files(filename):
     public_files = {
         'index.html', 'upload.html', 'review.html', 'mysok_import.html',
         'map.html', 'collection.html', 'listings.html', 'listing.html',
+        'viewing_route_map.js',
     }
     public_prefixes = ('vendor/', 'config/', 'uploads/reins/', 'uploads/thumbs/')
     if filename in public_files or filename.startswith(public_prefixes):
@@ -874,6 +937,35 @@ def v1_add_shortlist():
         'client': {'id': client['id'], 'name': client['name']},
         'listingId': listing_id,
     })
+
+
+@app.route('/api/v1/shortlists/<client_id>')
+@_workbench_auth_required
+def v1_client_shortlist(client_id):
+    conn = get_db()
+    client = conn.execute("SELECT id, name FROM clients WHERE id=? AND status='active'", (client_id,)).fetchone()
+    if not client:
+        conn.close()
+        return jsonify({'code': 0, 'error': 'Client not found'}), 404
+    rows = conn.execute("""
+        SELECT l.* FROM client_shortlists cs
+        JOIN listings l ON l.id = cs.listing_id
+        WHERE cs.client_id=?
+        ORDER BY cs.created_at DESC
+    """, (client_id,)).fetchall()
+    conn.close()
+    items = []
+    warnings = []
+    for row in rows:
+        data = _row_to_dict(row)
+        prop = standardize_property(data)
+        lat = float(data.get('latitude') or 0)
+        lon = float(data.get('longitude') or 0)
+        prop['routeEligible'] = bool(lat and lon)
+        if not prop['routeEligible']:
+            warnings.append({'listingId': prop['id'], 'message': '缺少座標，已標示為不可加入路線；不會估算位置。'})
+        items.append(prop)
+    return jsonify({'code': 1, 'client': dict(client), 'items': items, 'warnings': warnings})
 
 
 @app.route('/api/v1/shortlists/<client_id>/<listing_id>', methods=['DELETE'])
@@ -2457,6 +2549,323 @@ def _row_to_dict(row):
             d['price_per_sqm_raw'] = round(d['price_raw'] / d['size_sqm'], 1)
 
     return d
+
+# ── Viewing route planner MVP ──
+from viewing_planner import (
+    ALLOWED_DURATIONS, ALLOWED_MODES, ViewingPlanError, coord, make_share_token,
+    optimize_driving, optimize_transit, parse_date_time, parse_iso, public_property,
+    validate_stop_count, geometry_bounds, TRANSIT_UNAVAILABLE_MESSAGE,
+)
+
+
+def _planner_error(e):
+    status = getattr(e, 'status', 400)
+    return _json_error(getattr(e, 'message', str(e)), status, getattr(e, 'code', 'ERROR'), _request_id())
+
+
+def _load_plan(plan_id=None, token=None, include_revoked=False, public=False):
+    conn = get_db()
+    where = "vp.id=?" if plan_id else "vp.share_token=?"
+    value = plan_id or token
+    plan = conn.execute(f"""
+        SELECT vp.*, c.name AS client_name
+        FROM viewing_plans vp JOIN clients c ON c.id = vp.client_id
+        WHERE {where}
+    """, (value,)).fetchone()
+    if not plan:
+        conn.close()
+        return None
+    if token and plan['share_revoked_at'] and not include_revoked:
+        conn.close()
+        return None
+    stop_rows = conn.execute("""
+        SELECT vps.*, l.* FROM viewing_plan_stops vps
+        JOIN listings l ON l.id = vps.listing_id
+        WHERE vps.plan_id=? ORDER BY vps.seq ASC
+    """, (plan['id'],)).fetchall()
+    conn.close()
+    stops = []
+    for row in stop_rows:
+        d = dict(row)
+        snapshot = {}
+        try:
+            snapshot = json.loads(d.get('snapshot_json') or '{}')
+        except Exception:
+            snapshot = {}
+        prop = public_property(d)
+        prop.update(snapshot if isinstance(snapshot, dict) else {})
+        stops.append({
+            'listingId': d['listing_id'],
+            'seq': d['seq'],
+            'travelMinutes': d['travel_minutes'],
+            'legTravelMode': snapshot.get('legTravelMode') or plan['travel_mode'],
+            'departAt': d['depart_at'],
+            'arriveAt': d['arrive_at'],
+            'viewingStartAt': d['viewing_start_at'],
+            'viewingEndAt': d['viewing_end_at'],
+            'navigationUrl': d['navigation_url'],
+            'transitNavigationUrl': snapshot.get('transitNavigationUrl') or d['navigation_url'],
+            'externalTransitNavigationProvider': snapshot.get('externalTransitNavigationProvider') or '',
+            'externalTransitNavigationNote': snapshot.get('externalTransitNavigationNote') or '',
+            'property': prop,
+        })
+    totals = json.loads(plan['totals'] or '{}')
+    warnings = json.loads(plan['warnings'] or '[]')
+    try:
+        route_geometry = json.loads(plan['route_geometry'] or '{}')
+    except Exception:
+        route_geometry = {}
+    try:
+        route_bounds = json.loads(plan['route_bounds'] or '[]')
+    except Exception:
+        route_bounds = []
+    result = {
+        'id': plan['id'],
+        'clientId': plan['client_id'],
+        'clientName': plan['client_name'],
+        'title': plan['title'],
+        'travelMode': plan['travel_mode'],
+        'viewingDate': plan['viewing_date'],
+        'departureAt': plan['departure_at'],
+        'start': {'label': plan['start_label'], 'lat': plan['start_lat'], 'lon': plan['start_lon']},
+        'end': {'label': plan['end_label'] or plan['start_label'], 'lat': plan['end_lat'] or plan['start_lat'], 'lon': plan['end_lon'] or plan['start_lon']},
+        'viewingDurationMin': plan['viewing_duration_min'],
+        'provider': plan['provider'],
+        'heuristic': plan['heuristic'],
+        'warnings': warnings,
+        'totals': totals,
+        'routeGeometry': route_geometry if route_geometry else None,
+        'routeBounds': route_bounds,
+        'stops': stops,
+        'shareUrl': f"/share/viewing/{plan['share_token']}" if plan['share_token'] and not plan['share_revoked_at'] else '',
+        'shareRevokedAt': plan['share_revoked_at'] or '',
+        'createdAt': plan['created_at'],
+        'updatedAt': plan['updated_at'],
+    }
+    if public:
+        result.pop('id', None)
+        result.pop('clientId', None)
+        result.pop('shareUrl', None)
+        result.pop('shareRevokedAt', None)
+        result.pop('createdAt', None)
+        result.pop('updatedAt', None)
+    return result
+
+
+def _validate_plan_payload(data, require_plan_id=False):
+    client_id = str(data.get('clientId') or '').strip()
+    listing_ids = [str(x).strip() for x in (data.get('listingIds') or []) if str(x).strip()]
+    validate_stop_count(listing_ids)
+    duration = int(data.get('viewingDurationMin') or 0)
+    if duration not in ALLOWED_DURATIONS:
+        raise ViewingPlanError('睇樓時間只可選 30 / 45 / 60 分鐘', 400)
+    mode = str(data.get('travelMode') or '').strip()
+    if mode not in ALLOWED_MODES:
+        raise ViewingPlanError('交通模式只可係 driving 或 transit', 400)
+    start = data.get('start') or {}
+    origin = {
+        'id': '__origin__',
+        'label': str(start.get('label') or start.get('address') or '').strip()[:300] or '出發點',
+        'address': str(start.get('label') or start.get('address') or '').strip()[:300] or '出發點',
+        'lat': coord(start.get('lat'), 'start.lat'),
+        'lon': coord(start.get('lon'), 'start.lon'),
+    }
+    end_raw = data.get('end') or {}
+    end = {
+        'label': str(end_raw.get('label') or end_raw.get('address') or origin['label']).strip()[:300],
+        'lat': coord(end_raw.get('lat'), 'end.lat') if end_raw.get('lat') not in (None, '') else origin['lat'],
+        'lon': coord(end_raw.get('lon'), 'end.lon') if end_raw.get('lon') not in (None, '') else origin['lon'],
+    }
+    if data.get('departureAt'):
+        departure = parse_iso(data.get('departureAt'), 'departureAt')
+        viewing_date = departure.date().isoformat()
+    else:
+        departure = parse_date_time(str(data.get('viewingDate') or ''), str(data.get('departureTime') or ''))
+        viewing_date = str(data.get('viewingDate') or '')
+    if not client_id:
+        raise ViewingPlanError('clientId 必填', 400)
+    return client_id, listing_ids, duration, mode, origin, end, departure, viewing_date
+
+
+def _client_stops_or_error(client_id, listing_ids):
+    conn = get_db()
+    client = conn.execute("SELECT id, name FROM clients WHERE id=? AND status='active'", (client_id,)).fetchone()
+    if not client:
+        conn.close()
+        raise ViewingPlanError('Client not found', 404)
+    placeholders = ','.join('?' for _ in listing_ids)
+    rows = conn.execute(f"""
+        SELECT l.* FROM client_shortlists cs JOIN listings l ON l.id = cs.listing_id
+        WHERE cs.client_id=? AND cs.listing_id IN ({placeholders})
+    """, [client_id] + listing_ids).fetchall()
+    conn.close()
+    by_id = {r['id']: r for r in rows}
+    if set(by_id) != set(listing_ids):
+        raise ViewingPlanError('只可以安排該客戶 shortlist 入面嘅房源', 403, 'SHORTLIST_OWNERSHIP')
+    stops = []
+    warnings = []
+    for lid in listing_ids:
+        row = by_id[lid]
+        lat, lon = float(row['latitude'] or 0), float(row['longitude'] or 0)
+        if not lat or not lon:
+            warnings.append({'listingId': lid, 'message': '缺少座標，已排除；不會估算位置。'})
+            continue
+        prop = public_property(dict(row))
+        stops.append({'id': lid, 'listingId': lid, 'address': row['address'] or lid, 'label': row['address'] or lid, 'lat': lat, 'lon': lon, 'property': prop})
+    if len(stops) != len(listing_ids):
+        raise ViewingPlanError('有房源缺少座標，請先補座標；系統唔會估算或猜位置。', 400, 'MISSING_COORDINATES')
+    return stops, warnings
+
+
+def _optimize_payload(data):
+    client_id, listing_ids, duration, mode, origin, end, departure, viewing_date = _validate_plan_payload(data)
+    if mode == 'transit':
+        raise ViewingPlanError(TRANSIT_UNAVAILABLE_MESSAGE, 422, 'TRANSIT_PROVIDER_UNAVAILABLE')
+    stops, warnings = _client_stops_or_error(client_id, listing_ids)
+    manual_order = data.get('manualOrder') or []
+    if manual_order:
+        if set(manual_order) != set(listing_ids):
+            raise ViewingPlanError('手動排序必須包含同一批房源', 400)
+        by_id = {s['id']: s for s in stops}
+        stops = [by_id[x] for x in manual_order]
+    returns_to_start = abs(float(end['lat']) - float(origin['lat'])) < 0.000001 and abs(float(end['lon']) - float(origin['lon'])) < 0.000001 and end['label'] == origin['label']
+    end_location = None if returns_to_start else end
+    if data.get('mockDurations'):
+        vals = [int(x) for x in data.get('mockDurations') or []]
+        expected = len(stops) + (1 if end_location else 0)
+        if len(vals) != expected:
+            raise ViewingPlanError('mockDurations 數量必須等於 stops（如有終點則加一）；只可於 isolated staging 驗證使用', 400)
+        result = {'provider': 'mock_staging_matrix', 'heuristic': 'manual deterministic staging validation', **__import__('viewing_planner').build_schedule([origin] + stops, vals, departure, duration, mode, end_location=end_location)}
+        result['warnings'] = [{'message': 'mockDurations 只提供驗證時間，不提供 route geometry；不會畫假路線。'}]
+    elif mode == 'driving':
+        result = optimize_driving(origin, stops, departure, duration, optimize_waypoints=not bool(manual_order), end_location=end_location)
+    else:
+        result = optimize_transit(origin, stops, departure, duration, manual_order=bool(manual_order))
+    provider_warnings = result.get('warnings') or []
+    route_geometry = result.get('routeGeometry')
+    route_bounds = result.get('routeBounds') or geometry_bounds(route_geometry)
+    result.update({
+        'code': 1,
+        'clientId': client_id,
+        'travelMode': mode,
+        'viewingDate': viewing_date,
+        'viewingDurationMin': duration,
+        'start': origin,
+        'end': end,
+        'warnings': warnings + provider_warnings,
+        'routeGeometry': route_geometry,
+        'routeBounds': route_bounds,
+        'listingIds': [s['listingId'] for s in result['stops']],
+    })
+    return result
+
+
+@app.route('/api/v1/viewing-plans/optimize', methods=['POST'])
+@_workbench_auth_required
+def v1_viewing_optimize():
+    try:
+        return jsonify(_optimize_payload(request.get_json(silent=True) or {}))
+    except ViewingPlanError as e:
+        return _planner_error(e)
+
+
+@app.route('/api/v1/viewing-plans', methods=['GET', 'POST'])
+@_workbench_auth_required
+def v1_viewing_plans():
+    if request.method == 'GET':
+        client_id = request.args.get('clientId', '').strip()
+        conn = get_db()
+        if client_id:
+            rows = conn.execute("SELECT id FROM viewing_plans WHERE client_id=? ORDER BY updated_at DESC", (client_id,)).fetchall()
+        else:
+            rows = conn.execute("SELECT id FROM viewing_plans ORDER BY updated_at DESC LIMIT 50").fetchall()
+        conn.close()
+        return jsonify({'code': 1, 'plans': [_load_plan(r['id']) for r in rows]})
+    try:
+        data = request.get_json(silent=True) or {}
+        optimized = data.get('optimized') or _optimize_payload(data)
+        client_id, listing_ids, duration, mode, origin, end, departure, viewing_date = _validate_plan_payload(data)
+        if set(optimized.get('listingIds') or []) != set(listing_ids):
+            raise ViewingPlanError('保存內容同已優化房源不一致', 400)
+        plan_id = str(data.get('planId') or '').strip() or 'VP-' + uuid.uuid4().hex[:12].upper()
+        now = datetime.now(timezone.utc).isoformat()
+        title = str(data.get('title') or f"{viewing_date} 智慧睇樓路線").strip()[:160]
+        totals = {'totalTravelMinutes': optimized['totalTravelMinutes'], 'totalItineraryMinutes': optimized['totalItineraryMinutes'], 'finishAt': optimized['finishAt']}
+        route_geometry = optimized.get('routeGeometry') or {}
+        route_bounds = optimized.get('routeBounds') or geometry_bounds(route_geometry)
+        conn = get_db()
+        existing = conn.execute('SELECT share_token FROM viewing_plans WHERE id=?', (plan_id,)).fetchone()
+        token = existing['share_token'] if existing and existing['share_token'] else make_share_token()
+        conn.execute("""
+            INSERT INTO viewing_plans (id, client_id, title, travel_mode, viewing_date, departure_at, start_label, start_lat, start_lon, end_label, end_lat, end_lon, viewing_duration_min, provider, heuristic, warnings, totals, route_geometry, route_bounds, share_token, updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(id) DO UPDATE SET title=excluded.title, travel_mode=excluded.travel_mode, viewing_date=excluded.viewing_date, departure_at=excluded.departure_at, start_label=excluded.start_label, start_lat=excluded.start_lat, start_lon=excluded.start_lon, end_label=excluded.end_label, end_lat=excluded.end_lat, end_lon=excluded.end_lon, viewing_duration_min=excluded.viewing_duration_min, provider=excluded.provider, heuristic=excluded.heuristic, warnings=excluded.warnings, totals=excluded.totals, route_geometry=excluded.route_geometry, route_bounds=excluded.route_bounds, updated_at=excluded.updated_at
+        """, (plan_id, client_id, title, mode, viewing_date, optimized['departureAt'], origin['label'], origin['lat'], origin['lon'], end['label'], end['lat'], end['lon'], duration, optimized.get('provider',''), optimized.get('heuristic',''), json.dumps(optimized.get('warnings', []), ensure_ascii=False), json.dumps(totals, ensure_ascii=False), json.dumps(route_geometry, ensure_ascii=False), json.dumps(route_bounds, ensure_ascii=False), token, now))
+        conn.execute('DELETE FROM viewing_plan_stops WHERE plan_id=?', (plan_id,))
+        for stop in optimized['stops']:
+            snapshot = dict(stop.get('property') or {})
+            for key in ('legTravelMode', 'transitNavigationUrl', 'externalTransitNavigationProvider', 'externalTransitNavigationNote'):
+                if stop.get(key):
+                    snapshot[key] = stop[key]
+            conn.execute("""
+                INSERT INTO viewing_plan_stops (plan_id, listing_id, seq, travel_minutes, depart_at, arrive_at, viewing_start_at, viewing_end_at, navigation_url, snapshot_json)
+                VALUES (?,?,?,?,?,?,?,?,?,?)
+            """, (plan_id, stop['listingId'], stop['seq'], stop['travelMinutes'], stop['departAt'], stop['arriveAt'], stop['viewingStartAt'], stop['viewingEndAt'], stop['navigationUrl'], json.dumps(snapshot, ensure_ascii=False)))
+        conn.commit()
+        conn.close()
+        return jsonify({'code': 1, 'plan': _load_plan(plan_id)}), 201
+    except ViewingPlanError as e:
+        return _planner_error(e)
+
+
+@app.route('/api/v1/viewing-plans/<plan_id>')
+@_workbench_auth_required
+def v1_viewing_plan_detail(plan_id):
+    plan = _load_plan(plan_id)
+    if not plan:
+        return _json_error('搵唔到指定睇樓路線。', 404, 'NOT_FOUND', _request_id())
+    return jsonify({'code': 1, 'plan': plan})
+
+
+@app.route('/api/v1/viewing-plans/<plan_id>/share', methods=['POST', 'DELETE'])
+@_workbench_auth_required
+def v1_viewing_share(plan_id):
+    conn = get_db()
+    row = conn.execute('SELECT id FROM viewing_plans WHERE id=?', (plan_id,)).fetchone()
+    if not row:
+        conn.close()
+        return _json_error('搵唔到指定睇樓路線。', 404, 'NOT_FOUND', _request_id())
+    now = datetime.now(timezone.utc).isoformat()
+    if request.method == 'DELETE':
+        conn.execute('UPDATE viewing_plans SET share_revoked_at=?, updated_at=? WHERE id=?', (now, now, plan_id))
+    else:
+        conn.execute('UPDATE viewing_plans SET share_token=?, share_revoked_at="", updated_at=? WHERE id=?', (make_share_token(), now, plan_id))
+    conn.commit()
+    conn.close()
+    return jsonify({'code': 1, 'plan': _load_plan(plan_id, include_revoked=True)})
+
+
+@app.route('/api/share/viewing/<token>')
+def viewing_share_api(token):
+    if not token or len(token) < 32:
+        return _json_error('搵唔到分享連結，或者連結已撤回。', 404, 'NOT_FOUND', _request_id())
+    plan = _load_plan(token=token, public=True)
+    if not plan:
+        return _json_error('搵唔到分享連結，或者連結已撤回。', 404, 'NOT_FOUND', _request_id())
+    resp = jsonify({'code': 1, 'plan': plan})
+    resp.headers['X-Robots-Tag'] = 'noindex, nofollow'
+    return resp
+
+
+@app.route('/share/viewing/<token>')
+def viewing_share_page(token):
+    if not token or len(token) < 32 or not _load_plan(token=token, public=True):
+        resp = make_response('Share link not found or revoked', 404)
+        resp.headers['X-Robots-Tag'] = 'noindex, nofollow'
+        return resp
+    resp = make_response(send_from_directory('.', 'viewing_share.html'))
+    resp.headers['X-Robots-Tag'] = 'noindex, nofollow'
+    return resp
 
 # ── Route planning (Google Maps Directions API) ──
 GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY", "")

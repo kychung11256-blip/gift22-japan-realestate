@@ -74,7 +74,8 @@
       if(this.map){['viewing-route-line'].forEach(id=>{if(this.map.getLayer(id))this.map.removeLayer(id)});['viewing-route'].forEach(id=>{if(this.map.getSource(id))this.map.removeSource(id)});}
     }
     render(data){
-      this.pending=data||{}; if(!this.map||!this.map.loaded())return;
+      this.pending=data||{}; if(!this.map)return;
+      if(!this.map.isStyleLoaded()){this.map.once('load',()=>this.render(this.pending));return;}
       this.clear(); const stops=[];
       const plan=data.plan||data; const selected=data.selected||[];
       const origin=plan.start?{...plan.start,seq:'出',isOrigin:true}:data.start;

@@ -1,0 +1,10 @@
+[Unit]
+Description=Gift22 REINS daily session bootstrap
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/home/ubuntu/ai-team/platform
+ExecStart=/home/ubuntu/ai-team/platform/.venv/bin/python /home/ubuntu/ai-team/platform/reins_daily_login_bootstrap.py

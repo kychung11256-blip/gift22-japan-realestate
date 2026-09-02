@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Gift22 REINS daily session bootstrap at 08:05 JST
+
+[Timer]
+OnCalendar=*-*-* 23:05:00 UTC
+Persistent=true
+Unit=gift22-reins-login-bootstrap.service
+
+[Install]
+WantedBy=timers.target

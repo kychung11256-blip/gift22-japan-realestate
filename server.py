@@ -2554,7 +2554,7 @@ def _row_to_dict(row):
 from viewing_planner import (
     ALLOWED_DURATIONS, ALLOWED_MODES, ViewingPlanError, coord, make_share_token,
     optimize_driving, optimize_transit, parse_date_time, parse_iso, public_property,
-    validate_stop_count, geometry_bounds,
+    validate_stop_count, geometry_bounds, TRANSIT_UNAVAILABLE_MESSAGE,
 )
 
 
@@ -2598,11 +2598,15 @@ def _load_plan(plan_id=None, token=None, include_revoked=False, public=False):
             'listingId': d['listing_id'],
             'seq': d['seq'],
             'travelMinutes': d['travel_minutes'],
+            'legTravelMode': snapshot.get('legTravelMode') or plan['travel_mode'],
             'departAt': d['depart_at'],
             'arriveAt': d['arrive_at'],
             'viewingStartAt': d['viewing_start_at'],
             'viewingEndAt': d['viewing_end_at'],
             'navigationUrl': d['navigation_url'],
+            'transitNavigationUrl': snapshot.get('transitNavigationUrl') or d['navigation_url'],
+            'externalTransitNavigationProvider': snapshot.get('externalTransitNavigationProvider') or '',
+            'externalTransitNavigationNote': snapshot.get('externalTransitNavigationNote') or '',
             'property': prop,
         })
     totals = json.loads(plan['totals'] or '{}')
@@ -2715,6 +2719,8 @@ def _client_stops_or_error(client_id, listing_ids):
 
 def _optimize_payload(data):
     client_id, listing_ids, duration, mode, origin, end, departure, viewing_date = _validate_plan_payload(data)
+    if mode == 'transit':
+        raise ViewingPlanError(TRANSIT_UNAVAILABLE_MESSAGE, 422, 'TRANSIT_PROVIDER_UNAVAILABLE')
     stops, warnings = _client_stops_or_error(client_id, listing_ids)
     manual_order = data.get('manualOrder') or []
     if manual_order:
@@ -2797,10 +2803,14 @@ def v1_viewing_plans():
         """, (plan_id, client_id, title, mode, viewing_date, optimized['departureAt'], origin['label'], origin['lat'], origin['lon'], end['label'], end['lat'], end['lon'], duration, optimized.get('provider',''), optimized.get('heuristic',''), json.dumps(optimized.get('warnings', []), ensure_ascii=False), json.dumps(totals, ensure_ascii=False), json.dumps(route_geometry, ensure_ascii=False), json.dumps(route_bounds, ensure_ascii=False), token, now))
         conn.execute('DELETE FROM viewing_plan_stops WHERE plan_id=?', (plan_id,))
         for stop in optimized['stops']:
+            snapshot = dict(stop.get('property') or {})
+            for key in ('legTravelMode', 'transitNavigationUrl', 'externalTransitNavigationProvider', 'externalTransitNavigationNote'):
+                if stop.get(key):
+                    snapshot[key] = stop[key]
             conn.execute("""
                 INSERT INTO viewing_plan_stops (plan_id, listing_id, seq, travel_minutes, depart_at, arrive_at, viewing_start_at, viewing_end_at, navigation_url, snapshot_json)
                 VALUES (?,?,?,?,?,?,?,?,?,?)
-            """, (plan_id, stop['listingId'], stop['seq'], stop['travelMinutes'], stop['departAt'], stop['arriveAt'], stop['viewingStartAt'], stop['viewingEndAt'], stop['navigationUrl'], json.dumps(stop.get('property') or {}, ensure_ascii=False)))
+            """, (plan_id, stop['listingId'], stop['seq'], stop['travelMinutes'], stop['departAt'], stop['arriveAt'], stop['viewingStartAt'], stop['viewingEndAt'], stop['navigationUrl'], json.dumps(snapshot, ensure_ascii=False)))
         conn.commit()
         conn.close()
         return jsonify({'code': 1, 'plan': _load_plan(plan_id)}), 201

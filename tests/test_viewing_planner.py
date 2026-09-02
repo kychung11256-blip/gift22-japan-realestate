@@ -94,6 +94,33 @@ def test_auth_required_on_all_workbench_planner_apis(app_client):
     assert app_client.delete("/api/v1/viewing-plans/VP-NOPE/share").status_code == 401
 
 
+def test_ui_marks_transit_automatic_planning_disabled(app_client):
+    page = app_client.get("/workbench/viewing-planner", headers=auth_header())
+    assert page.status_code == 200
+    html = page.get_data(as_text=True)
+    assert '<option value="transit" disabled>' in html
+    assert "公共交通自動規劃暫未支援" in html
+    assert "現有 Google Routes Provider 未提供日本公共交通路線" in html
+
+
+def test_transit_api_returns_422_without_calling_google_provider(app_client, monkeypatch):
+    def should_not_call(*_args, **_kwargs):
+        raise AssertionError("transit provider must not be called")
+
+    monkeypatch.setattr(server, "optimize_transit", should_not_call)
+    body = payload()
+    body["travelMode"] = "transit"
+    resp = app_client.post("/api/v1/viewing-plans/optimize", headers=auth_header(), json=body)
+    assert resp.status_code == 422
+    assert resp.content_type.startswith("application/json")
+    assert resp.get_json() == {
+        "code": 0,
+        "error": "公共交通自動規劃暫未支援；請使用每段 Google Maps 公共交通導航連結。",
+        "errorCode": "TRANSIT_PROVIDER_UNAVAILABLE",
+        "requestId": resp.get_json()["requestId"],
+    }
+
+
 def test_shortlist_ownership_stop_count_and_missing_coordinate_validation(app_client, monkeypatch):
     monkeypatch.setattr(server, "optimize_driving", mocked_route)
     headers = auth_header()
@@ -147,6 +174,10 @@ def test_driving_polyline_decoding_and_geometry_serialization(monkeypatch):
     assert result["routeGeometry"]["type"] == "LineString"
     assert len(result["routeGeometry"]["coordinates"]) == 3
     assert result["routeBounds"] == geometry_bounds(result["routeGeometry"])
+    assert all(s["travelMinutes"] > 0 for s in result["stops"])
+    assert result["stops"][0]["navigationUrl"].endswith("travelmode=driving")
+    assert "travelmode=transit" in result["stops"][0]["transitNavigationUrl"]
+    assert result["stops"][0]["externalTransitNavigationProvider"] == "google_maps_live"
     assert result.get("warnings") == []
 
 
@@ -391,11 +422,17 @@ def test_save_reopen_share_revocation_regeneration_and_no_status_mutation(app_cl
     assert "shareUrl" not in share_plan
     assert "notes_freetext" not in json.dumps(share_plan)
     assert all("property" in s and "notes" not in s["property"] for s in share_plan["stops"])
+    assert share_plan["provider"] == "mock_google_directions"
+    assert share_plan["travelMode"] == "driving"
+    assert all("travelmode=transit" in s["transitNavigationUrl"] for s in share_plan["stops"])
+    assert all(s["externalTransitNavigationProvider"] == "google_maps_live" for s in share_plan["stops"])
 
     share_page = app_client.get(f"/share/viewing/{token}")
     assert share_page.status_code == 200
     assert b"noindex,nofollow" in share_page.data
     assert share_page.headers["X-Robots-Tag"] == "noindex, nofollow"
+    assert "外部 Google Maps 公共交通連結" in share_page.get_data(as_text=True)
+    assert "唔係平台內部計算結果" in share_page.get_data(as_text=True)
 
     revoked = app_client.delete(f"/api/v1/viewing-plans/{plan['id']}/share", headers=headers).get_json()["plan"]
     assert revoked["shareUrl"] == ""

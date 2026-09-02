@@ -4,12 +4,10 @@ MVP route policy:
 - Driving/taxi: Google Directions API with provider waypoint optimization when a
   configured API key is available. We never fabricate durations on provider
   failure.
-- Public transit: Google Routes API v2 Compute Route Matrix for time-aware leg
-  durations, then a deterministic nearest-neighbour + 2-opt heuristic over the
-  provider matrix. Routes API v2 Compute Routes is called separately for each
-  optimized transit leg because transit routes do not support intermediate
-  waypoints. If any matrix element or leg is unsupported/unavailable, return an
-  explicit error.
+- Public transit: the current Google Routes Provider returned NO_ROUTES for the
+  target Japan validation routes.  Platform-side automatic transit planning is
+  disabled; each leg still exposes a Google Maps transit navigation URL for the
+  user to open live in Google Maps.
 """
 
 from __future__ import annotations
@@ -34,6 +32,8 @@ UNREACHABLE_ROUTE_SECONDS = 10**12
 
 ALLOWED_DURATIONS = {30, 45, 60}
 ALLOWED_MODES = {"driving", "transit"}
+TRANSIT_UNAVAILABLE_MESSAGE = "公共交通自動規劃暫未支援；請使用每段 Google Maps 公共交通導航連結。"
+TRANSIT_EXTERNAL_NAV_NOTE = "此外部連結由 Google Maps 即時提供，唔係平台內部計算結果。"
 
 
 class ViewingPlanError(Exception):
@@ -130,6 +130,11 @@ def nav_url(origin: dict[str, Any], dest: dict[str, Any], mode: str) -> str:
     })
 
 
+def external_transit_nav_url(origin: dict[str, Any], dest: dict[str, Any]) -> str:
+    """Google Maps live transit URL. This is not an internal route result."""
+    return nav_url(origin, dest, "transit")
+
+
 def decode_polyline(encoded: str) -> list[list[float]]:
     """Decode Google's encoded polyline into GeoJSON [lng, lat] coordinates."""
     if not encoded:
@@ -221,11 +226,15 @@ def build_schedule(order: list[dict[str, Any]], leg_minutes: list[int], departur
         stop.update({
             "seq": i,
             "travelMinutes": travel,
+            "legTravelMode": mode,
             "departAt": depart_at.isoformat(),
             "arriveAt": arrive_at.isoformat(),
             "viewingStartAt": arrive_at.isoformat(),
             "viewingEndAt": view_end.isoformat(),
             "navigationUrl": nav_url(prev, stop, mode),
+            "transitNavigationUrl": external_transit_nav_url(prev, stop),
+            "externalTransitNavigationProvider": "google_maps_live",
+            "externalTransitNavigationNote": TRANSIT_EXTERNAL_NAV_NOTE,
         })
         stops.append(stop)
         current = view_end
@@ -240,9 +249,13 @@ def build_schedule(order: list[dict[str, Any]], leg_minutes: list[int], departur
             "lat": end_location.get("lat"),
             "lon": end_location.get("lon"),
             "travelMinutes": travel,
+            "legTravelMode": mode,
             "departAt": current.isoformat(),
             "arriveAt": end_arrive.isoformat(),
             "navigationUrl": nav_url(prev, end_location, mode),
+            "transitNavigationUrl": external_transit_nav_url(prev, end_location),
+            "externalTransitNavigationProvider": "google_maps_live",
+            "externalTransitNavigationNote": TRANSIT_EXTERNAL_NAV_NOTE,
         }
         current = end_arrive
     return {

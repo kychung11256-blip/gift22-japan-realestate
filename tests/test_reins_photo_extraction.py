@@ -1,4 +1,5 @@
 import base64
+import hashlib
 import io
 import json
 from pathlib import Path
@@ -140,3 +141,105 @@ def test_reins_photo_preview_wrong_listing_404(tmp_path, monkeypatch):
     client = _setup(tmp_path, monkeypatch)
     missing = client.post("/api/reins-photo-preview/NOPE", headers=auth_header())
     assert missing.status_code == 404
+
+
+def _preview_and_source(client):
+    preview = client.post("/api/reins-photo-preview/REINS-TEST-1", headers=auth_header())
+    assert preview.status_code == 200
+    data = preview.get_json()
+    assert data["source_pages"]
+    return data["source_pages"][0]
+
+
+def test_manual_crop_creates_temp_candidate_with_high_res_pixels_and_no_db_write(tmp_path, monkeypatch):
+    client = _setup(tmp_path, monkeypatch)
+    db_path = Path(db.DB_PATH)
+    before = hashlib.sha256(db_path.read_bytes()).hexdigest()
+    source = _preview_and_source(client)
+
+    resp = client.post(
+        "/api/reins-photo-manual-crop/REINS-TEST-1",
+        headers=auth_header(),
+        json={
+            "source_image_id": source["id"],
+            "temp_id": "manual_crop_1",
+            "category": "室內照片",
+            "crop": {"x": 0.1, "y": 0.2, "width": 0.2, "height": 0.3},
+        },
+    )
+
+    assert resp.status_code == 200
+    cand = resp.get_json()["candidate"]
+    assert cand["method"] == "manual_crop"
+    assert cand["source_image_id"] == source["id"]
+    assert cand["normalized_crop"] == {"x": 0.1, "y": 0.2, "width": 0.2, "height": 0.3}
+    assert cand["crop_pixels"] == {"x": 150, "y": 200, "width": 300, "height": 300}
+    assert cand["width"] == 300
+    assert cand["height"] == 300
+    assert hashlib.sha256(db_path.read_bytes()).hexdigest() == before
+
+
+def test_manual_crop_rejects_bad_coordinates_and_untrusted_source(tmp_path, monkeypatch):
+    client = _setup(tmp_path, monkeypatch)
+    source = _preview_and_source(client)
+    bad_crops = [
+        {"x": -0.1, "y": 0.1, "width": 0.2, "height": 0.2},
+        {"x": float("nan"), "y": 0.1, "width": 0.2, "height": 0.2},
+        {"x": float("inf"), "y": 0.1, "width": 0.2, "height": 0.2},
+        {"x": 0.1, "y": 0.1, "width": 0, "height": 0.2},
+        {"x": 0.9, "y": 0.1, "width": 0.2, "height": 0.2},
+    ]
+    for i, crop in enumerate(bad_crops):
+        resp = client.post(
+            "/api/reins-photo-manual-crop/REINS-TEST-1",
+            headers=auth_header(),
+            json={"source_image_id": source["id"], "temp_id": f"bad_{i}", "category": "室內照片", "crop": crop},
+        )
+        assert resp.status_code == 422
+
+    rejected = client.post(
+        "/api/reins-photo-manual-crop/REINS-TEST-1",
+        headers=auth_header(),
+        json={"source_image_id": "http://evil.example/a.jpg", "temp_id": "bad_src", "category": "室內照片", "crop": {"x": 0.1, "y": 0.1, "width": 0.2, "height": 0.2}},
+    )
+    assert rejected.status_code == 400
+
+    arbitrary = client.post(
+        "/api/reins-photo-manual-crop/REINS-TEST-1",
+        headers=auth_header(),
+        json={"source_image_id": source["id"], "temp_id": "bad_path", "category": "室內照片", "crop": {"x": 0.1, "y": 0.1, "width": 0.2, "height": 0.2}, "path": "/etc/passwd"},
+    )
+    assert arbitrary.status_code == 400
+
+
+def test_manual_crop_limit_and_confirm_idempotency(tmp_path, monkeypatch):
+    client = _setup(tmp_path, monkeypatch)
+    source = _preview_and_source(client)
+    for i in range(20):
+        resp = client.post(
+            "/api/reins-photo-manual-crop/REINS-TEST-1",
+            headers=auth_header(),
+            json={"source_image_id": source["id"], "temp_id": f"manual_{i}", "category": "室內照片", "crop": {"x": 0.01 * i, "y": 0.1, "width": 0.05, "height": 0.05}},
+        )
+        assert resp.status_code == 200
+    overflow = client.post(
+        "/api/reins-photo-manual-crop/REINS-TEST-1",
+        headers=auth_header(),
+        json={"source_image_id": source["id"], "temp_id": "manual_overflow", "category": "室內照片", "crop": {"x": 0.1, "y": 0.2, "width": 0.05, "height": 0.05}},
+    )
+    assert overflow.status_code == 422
+
+    first = client.post(
+        "/api/reins-photo-confirm/REINS-TEST-1",
+        headers=auth_header(),
+        json={"candidates": [{"id": "manual_0", "category": "外観"}]},
+    )
+    assert first.status_code == 200
+    assert first.get_json()["confirmed"] == 1
+    second = client.post(
+        "/api/reins-photo-confirm/REINS-TEST-1",
+        headers=auth_header(),
+        json={"candidates": [{"id": "manual_0", "category": "外観"}]},
+    )
+    assert second.status_code == 200
+    assert second.get_json()["confirmed"] == 0

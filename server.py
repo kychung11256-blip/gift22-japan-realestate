@@ -34,7 +34,7 @@ from db import get_db, init_db
 from suumo_scraper import scrape_and_insert
 from suumo_search import search as suumo_search, scrape_detail, import_to_db
 from workbench_api import filter_properties, property_stats, sort_properties, standardize_property
-from reins_photo_extractor import CONTROLLED_TEMP_ROOT, ExtractionError, confirm_candidates, preview_candidates
+from reins_photo_extractor import CONTROLLED_TEMP_ROOT, ExtractionError, confirm_candidates, create_manual_crop, preview_candidates
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB
@@ -708,6 +708,29 @@ def reins_photo_preview(listing_id):
         return jsonify({'code': 0, 'error': str(e)}), e.status
     except Exception as e:
         return jsonify({'code': 0, 'error': f'REINS photo extraction failed: {e}'}), 500
+
+
+@app.route('/api/reins-photo-manual-crop/<listing_id>', methods=['POST'])
+@_workbench_auth_required
+def reins_photo_manual_crop(listing_id):
+    """Create a temp manual crop candidate from a preview source page; no DB write."""
+    data = request.get_json(silent=True) or {}
+    conn = get_db()
+    row = conn.execute(
+        "SELECT id, source, reins_drawing_pdf FROM listings WHERE id = ?",
+        (listing_id,),
+    ).fetchone()
+    conn.close()
+    if not row or row['source'] != 'reins':
+        return jsonify({'code': 0, 'error': 'REINS listing not found'}), 404
+    if not row['reins_drawing_pdf']:
+        return jsonify({'code': 0, 'error': 'REINS drawing PDF not found'}), 404
+    try:
+        return jsonify(create_manual_crop(row['id'], row['reins_drawing_pdf'], data))
+    except ExtractionError as e:
+        return jsonify({'code': 0, 'error': str(e)}), e.status
+    except Exception as e:
+        return jsonify({'code': 0, 'error': f'REINS manual crop failed: {e}'}), 500
 
 
 @app.route('/api/reins-photo-confirm/<listing_id>', methods=['POST'])

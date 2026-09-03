@@ -56,12 +56,12 @@ def _open_listing():
                     {
                         "code": 1,
                         "source_pages": [
-                            {"id": "page_1", "page": 1, "url": "/source.jpg", "width": 1000, "height": 800}
+                            {"id": "page_1", "page": 1, "url": "/api/reins-photo-preview-file/REINS-TEST-1/page_1?token=source-token", "width": 1000, "height": 800}
                         ],
                         "candidates": [
                             {
                                 "id": "auto_1",
-                                "url": "/auto.jpg",
+                                "url": "/api/reins-photo-preview-file/REINS-TEST-1/auto_1?token=auto-token",
                                 "page": 1,
                                 "width": 220,
                                 "height": 160,
@@ -91,7 +91,7 @@ def _open_listing():
                         "code": 1,
                         "candidate": {
                             "id": payload["temp_id"],
-                            "url": "/manual.jpg",
+                            "url": "/api/reins-photo-preview-file/REINS-TEST-1/" + payload["temp_id"] + "?token=manual-token",
                             "page": 1,
                             "width": w,
                             "height": h,
@@ -107,7 +107,7 @@ def _open_listing():
         elif url.endswith("/api/reins-photo-confirm/REINS-TEST-1"):
             state["confirm_payloads"].append(route.request.post_data_json)
             route.fulfill(status=200, content_type="application/json", body='{"code":1,"confirmed":0}')
-        elif url.endswith("/source.jpg") or url.endswith("/auto.jpg") or url.endswith("/manual.jpg"):
+        elif "/api/reins-photo-preview-file/" in url:
             route.fulfill(status=200, content_type="image/png", body=image)
         elif url.endswith("/vendor/workbench-theme.css"):
             route.fulfill(status=200, content_type="text/css", body="")
@@ -221,6 +221,70 @@ def test_touch_pointer_event_can_create_manual_crop_and_auto_candidate_highlight
         page.dispatch_event("#reinsCropStage", "pointerup", {"pointerId": 7, "pointerType": "touch", "clientX": box["x"] + box["width"] * 0.38, "clientY": box["y"] + box["height"] * 0.38})
         page.wait_for_selector("[data-manual-box]")
         assert len(state["manual_payloads"]) >= 1
+    finally:
+        browser.close()
+        playwright.stop()
+
+
+def test_preview_images_use_signed_urls_and_image_failures_do_not_stay_loading():
+    playwright, browser, page, state = _open_listing()
+    try:
+        page.click("button:has-text('從 REINS 圖面提取相片')")
+        page.wait_for_selector("#reinsSourceImage")
+        urls = page.evaluate("Array.from(document.querySelectorAll('#reinsExtractModal img[data-preview-img]')).map(img => img.getAttribute('src'))")
+        assert urls
+        assert all('/api/reins-photo-preview-file/REINS-TEST-1/' in u and 'token=' in u for u in urls)
+    finally:
+        browser.close()
+        playwright.stop()
+
+    playwright, browser, page, state = _open_listing()
+    try:
+        page.route("**/api/reins-photo-preview-file/**", lambda route: route.fulfill(status=401, content_type="text/plain", body="unauthorized"))
+        page.click("button:has-text('從 REINS 圖面提取相片')")
+        page.wait_for_selector("text=預覽圖片載入失敗，請重新開啟。")
+        assert page.locator("button:has-text('重新載入預覽')").count() == 1
+        assert state["confirm_payloads"] == []
+    finally:
+        browser.close()
+        playwright.stop()
+
+    playwright, browser, page, state = _open_listing()
+    try:
+        page.route("**/api/reins-photo-preview-file/**", lambda route: route.fulfill(status=404, content_type="text/plain", body="missing"))
+        page.click("button:has-text('從 REINS 圖面提取相片')")
+        page.wait_for_selector("text=預覽圖片載入失敗，請重新開啟。")
+        assert page.locator("button:has-text('重新載入預覽')").count() == 1
+        assert state["confirm_payloads"] == []
+    finally:
+        browser.close()
+        playwright.stop()
+
+
+def test_preview_image_timeout_shows_reload_without_infinite_retry():
+    playwright, browser, page, state = _open_listing()
+    try:
+        page.click("button:has-text('從 REINS 圖面提取相片')")
+        page.wait_for_selector("#reinsSourceImage")
+        page.evaluate("""() => {
+            const modal = document.getElementById('reinsExtractModal');
+            const img = document.createElement('img');
+            img.setAttribute('data-preview-img', '1');
+            img.src = 'http://preview.invalid/never-loads.jpg';
+            modal.appendChild(img);
+            const originalSetTimeout = window.setTimeout;
+            window.__timeouts = [];
+            window.setTimeout = (fn, ms) => {
+                window.__timeouts.push(ms);
+                if (typeof fn === 'function') fn();
+                return 1;
+            };
+            window.reinsStartImageLoadGuard();
+            window.setTimeout = originalSetTimeout;
+        }""")
+        page.wait_for_selector("text=預覽圖片載入失敗，請重新開啟。")
+        assert page.evaluate("window.__timeouts") == [10000]
+        assert state["confirm_payloads"] == []
     finally:
         browser.close()
         playwright.stop()

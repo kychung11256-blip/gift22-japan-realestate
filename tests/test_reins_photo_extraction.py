@@ -1,4 +1,5 @@
 import base64
+import copy
 import hashlib
 import io
 import json
@@ -8,6 +9,7 @@ from PIL import Image
 
 import db
 import server
+from reins_photo_extractor import CONTROLLED_TEMP_ROOT, load_manifest
 
 
 def auth_header():
@@ -90,6 +92,8 @@ def test_reins_photo_preview_auth_and_no_db_write(tmp_path, monkeypatch):
     assert data["included_count"] >= 1
     assert any(c["classification"] == "interior_photo" and not c["excluded"] for c in data["candidates"])
     assert any(c["classification"] == "composite_page" and c["excluded"] for c in data["candidates"])
+    assert data["source_pages"][0]["url"].startswith("/api/reins-photo-preview-file/REINS-TEST-1/page_1?token=")
+    assert all("/api/reins-photo-preview-file/REINS-TEST-1/" in c["url"] for c in data["candidates"])
 
     conn = db.get_db()
     row = conn.execute("SELECT interior_photos FROM listings WHERE id='REINS-TEST-1'").fetchone()
@@ -151,6 +155,67 @@ def _preview_and_source(client):
     return data["source_pages"][0]
 
 
+def test_signed_preview_file_loads_without_authorization_and_rejects_bad_tokens(tmp_path, monkeypatch):
+    client = _setup(tmp_path, monkeypatch)
+    preview = client.post("/api/reins-photo-preview/REINS-TEST-1", headers=auth_header()).get_json()
+    source = preview["source_pages"][0]
+    signed_url = source["url"]
+
+    ok = client.get(signed_url)
+    assert ok.status_code == 200
+    assert ok.headers["Content-Type"].startswith("image/jpeg")
+    assert ok.headers["Cache-Control"] == "private, no-store"
+    assert ok.data.startswith(b"\xff\xd8")
+
+    unsigned = client.get("/api/reins-photo-preview-file/REINS-TEST-1/page_1")
+    assert unsigned.status_code == 403
+
+    invalid = client.get(signed_url.rsplit("=", 1)[0] + "=not-a-token")
+    assert invalid.status_code == 403
+
+    expired = server._sign_preview_asset("REINS-TEST-1", "page_1", load_manifest("REINS-TEST-1"), now=0)
+    expired_resp = client.get(f"/api/reins-photo-preview-file/REINS-TEST-1/page_1?token={expired}")
+    assert expired_resp.status_code == 403
+
+
+def test_signed_preview_file_rejects_asset_tampering_cross_listing_and_non_manifest(tmp_path, monkeypatch):
+    client = _setup(tmp_path, monkeypatch)
+    preview = client.post("/api/reins-photo-preview/REINS-TEST-1", headers=auth_header()).get_json()
+    token = preview["source_pages"][0]["url"].split("token=", 1)[1]
+
+    tampered_asset = client.get(f"/api/reins-photo-preview-file/REINS-TEST-1/not_in_manifest?token={token}")
+    assert tampered_asset.status_code in (403, 404)
+
+    conn = db.get_db()
+    conn.execute(
+        """
+        INSERT INTO listings (id, address, price, status, source, reins_drawing_pdf, interior_photos, staged_photos, photos)
+        VALUES (?,?,?,?,?,?,?,?,?)
+        """,
+        ("REINS-TEST-2", "東京都港区", 31000, "draft", "reins", "/uploads/reins/TESTREINS/drawing.pdf", "[]", "[]", "[]"),
+    )
+    conn.commit()
+    conn.close()
+    client.post("/api/reins-photo-preview/REINS-TEST-2", headers=auth_header())
+    cross = client.get(f"/api/reins-photo-preview-file/REINS-TEST-2/page_1?token={token}")
+    assert cross.status_code == 403
+
+    traversal = client.get(f"/api/reins-photo-preview-file/REINS-TEST-1/..%2Fmanifest?token={token}")
+    assert traversal.status_code in (403, 404)
+
+    fake = client.get(f"/api/reins-photo-preview-file/REINS-TEST-1/fake_asset?token={token}")
+    assert fake.status_code == 404
+
+    manifest = load_manifest("REINS-TEST-1")
+    mutated = copy.deepcopy(manifest)
+    mutated["source_pages"][0]["id"] = "evil_asset"
+    mutated["source_pages"][0]["temp_path"] = str(Path("/etc/passwd"))
+    manifest_path = CONTROLLED_TEMP_ROOT / "REINS-TEST-1" / "manifest.json"
+    manifest_path.write_text(json.dumps(mutated, ensure_ascii=False), encoding="utf-8")
+    evil = client.get(f"/api/reins-photo-preview-file/REINS-TEST-1/evil_asset?token={token}")
+    assert evil.status_code == 403
+
+
 def test_manual_crop_creates_temp_candidate_with_high_res_pixels_and_no_db_write(tmp_path, monkeypatch):
     client = _setup(tmp_path, monkeypatch)
     db_path = Path(db.DB_PATH)
@@ -171,6 +236,8 @@ def test_manual_crop_creates_temp_candidate_with_high_res_pixels_and_no_db_write
     assert resp.status_code == 200
     cand = resp.get_json()["candidate"]
     assert cand["method"] == "manual_crop"
+    assert cand["url"].startswith("/api/reins-photo-preview-file/REINS-TEST-1/manual_crop_1?token=")
+    assert client.get(cand["url"]).status_code == 200
     assert cand["source_image_id"] == source["id"]
     assert cand["normalized_crop"] == {"x": 0.1, "y": 0.2, "width": 0.2, "height": 0.3}
     assert cand["crop_pixels"] == {"x": 150, "y": 200, "width": 300, "height": 300}

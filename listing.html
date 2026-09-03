@@ -500,17 +500,42 @@ async function openReinsExtractModal(lid) {
     const r = await fetch('/api/reins-photo-preview/' + encodeURIComponent(lid), { method: 'POST' });
     const d = await r.json();
     if (!r.ok || d.code !== 1) throw new Error(d.error || '提取失敗');
-    reinsExtractState.candidates = d.candidates || [];
-    reinsExtractState.sourcePages = d.source_pages || [];
-    reinsExtractState.activeSourceId = (reinsExtractState.sourcePages[0] || {}).id || '';
-    reinsExtractState.selected = new Set(reinsExtractState.candidates.filter(c => !c.excluded && c.classification === 'interior_photo').map(c => c.id));
-    reinsExtractState.labels = {};
-    reinsExtractState.candidates.forEach(c => { reinsExtractState.labels[c.id] = '其他'; });
-    reinsExtractState.active = 0;
+    reinsApplyPreviewData(d);
   } catch (e) {
     reinsExtractState.error = e.message;
   }
   renderReinsExtractModal();
+}
+
+function reinsApplyPreviewData(d) {
+  reinsExtractState.candidates = d.candidates || [];
+  reinsExtractState.sourcePages = d.source_pages || [];
+  reinsExtractState.activeSourceId = (reinsExtractState.sourcePages[0] || {}).id || '';
+  reinsExtractState.selected = new Set(reinsExtractState.candidates.filter(c => !c.excluded && c.classification === 'interior_photo').map(c => c.id));
+  reinsExtractState.labels = {};
+  reinsExtractState.candidates.forEach(c => { reinsExtractState.labels[c.id] = '其他'; });
+  reinsExtractState.manual = [];
+  reinsExtractState.activeManualId = '';
+  reinsExtractState.active = 0;
+  reinsExtractState.previewLoadError = '';
+  reinsExtractState.previewLoading = false;
+}
+
+async function reloadReinsPreview() { await openReinsExtractModal(reinsExtractState.lid); }
+function reinsPreviewFailed() {
+  if (reinsExtractState.previewLoadError) return;
+  reinsExtractState.previewLoadError = '預覽圖片載入失敗，請重新開啟。';
+  renderReinsExtractModal();
+}
+function reinsStartImageLoadGuard() {
+  reinsExtractState.previewLoadError = '';
+  const marker = Date.now();
+  reinsExtractState.imageGuard = marker;
+  setTimeout(() => {
+    if (reinsExtractState.imageGuard !== marker) return;
+    const imgs = Array.from(document.querySelectorAll('#reinsExtractModal img[data-preview-img]'));
+    if (imgs.some(img => !img.complete || img.naturalWidth === 0)) reinsPreviewFailed();
+  }, 10000);
 }
 
 function closeReinsExtractModal() {
@@ -655,7 +680,7 @@ function renderManualCards() {
     const opts = REINS_CROP_CATEGORIES.map(c => '<option value="' + esc(c) + '"' + (b.category === c ? ' selected' : '') + '>' + esc(c) + '</option>').join('');
     const w = b.crop && src ? Math.round(b.crop.width * src.width) : (b.width || 0);
     const h = b.crop && src ? Math.round(b.crop.height * src.height) : (b.height || 0);
-    return '<div class="border rounded-xl p-2 ' + (b.id===reinsExtractState.activeManualId?'border-good bg-good/10':'border-border bg-surface') + '"><img src="' + esc(b.url) + '" class="w-full h-24 object-contain rounded-lg bg-white mb-2" onerror="this.style.display=\'none\'"><div class="text-[10px] text-good font-semibold mb-1">手動裁切 #' + (i+1) + '</div><select data-manual-category="' + esc(b.id) + '" class="w-full text-xs rounded-lg border border-border bg-surface-card px-2 py-1.5 mb-1">' + opts + '</select><div class="text-[10px] text-dim">頁 ' + esc((reinsExtractState.sourcePages.find(p=>p.id===b.source_image_id)||{}).page || '') + ' · ' + w + '×' + h + 'px</div><button data-delete-manual="' + esc(b.id) + '" class="mt-2 text-[11px] text-bad">刪除此框</button></div>';
+    return '<div class="border rounded-xl p-2 ' + (b.id===reinsExtractState.activeManualId?'border-good bg-good/10':'border-border bg-surface') + '"><img src="' + esc(b.url) + '" data-preview-img="1" class="w-full h-24 object-contain rounded-lg bg-white mb-2" onerror="reinsPreviewFailed()"><div class="text-[10px] text-good font-semibold mb-1">手動裁切 #' + (i+1) + '</div><select data-manual-category="' + esc(b.id) + '" class="w-full text-xs rounded-lg border border-border bg-surface-card px-2 py-1.5 mb-1">' + opts + '</select><div class="text-[10px] text-dim">頁 ' + esc((reinsExtractState.sourcePages.find(p=>p.id===b.source_image_id)||{}).page || '') + ' · ' + w + '×' + h + 'px</div><button data-delete-manual="' + esc(b.id) + '" class="mt-2 text-[11px] text-bad">刪除此框</button></div>';
   }).join('') || '<div class="text-xs text-dim py-4 text-center">尚未有手動裁切</div>';
   el.querySelectorAll('[data-manual-category]').forEach(x => x.onchange = () => reinsSetManualCategory(x.dataset.manualCategory, x.value));
   el.querySelectorAll('[data-delete-manual]').forEach(x => x.onclick = () => reinsDeleteManual(x.dataset.deleteManual));
@@ -674,6 +699,10 @@ function renderReinsExtractModal() {
     modal.innerHTML = `<div class="bg-surface-card border border-border rounded-2xl w-full max-w-xl p-5"><div class="flex items-center justify-between mb-4"><h3 class="text-sm font-bold text-gold">REINS 圖面相片提取</h3><button onclick="closeReinsExtractModal()" class="w-7 h-7 rounded-full bg-surface-elevated border border-border text-dim hover:text-gold text-sm">✕</button></div><div class="bg-bad/10 border border-bad/30 rounded-xl p-3 text-xs text-bad mb-4">${esc(s.error)}</div><a href="${esc((window._listingData||{}).reins_drawing_pdf || '#')}" target="_blank" class="text-xs text-gold underline">図面を見る</a></div>`;
     return;
   }
+  if (s.previewLoadError) {
+    modal.innerHTML = `<div class="bg-surface-card border border-border rounded-2xl w-full max-w-xl p-5"><div class="flex items-center justify-between mb-4"><h3 class="text-sm font-bold text-gold">REINS 圖面相片提取</h3><button onclick="closeReinsExtractModal()" class="w-7 h-7 rounded-full bg-surface-elevated border border-border text-dim hover:text-gold text-sm">✕</button></div><div class="bg-bad/10 border border-bad/30 rounded-xl p-3 text-xs text-bad mb-4">${esc(s.previewLoadError)}</div><button onclick="reloadReinsPreview()" class="bg-gold hover:bg-gold-dark text-black font-bold py-2.5 px-4 rounded-xl text-sm">重新載入預覽</button></div>`;
+    return;
+  }
   const source = reinsActiveSource();
   const cands = s.candidates || [];
   const modeClass = mode => 'px-3 py-1.5 rounded-lg text-xs font-semibold border ' + (s.mode === mode ? 'bg-gold text-black border-gold' : 'bg-surface-elevated text-dim border-border hover:border-gold/50');
@@ -683,7 +712,7 @@ function renderReinsExtractModal() {
     const disabled = c.excluded || c.classification !== 'interior_photo';
     const opts = REINS_ROOM_LABELS.map(l => `<option value="${esc(l)}" ${(s.labels[c.id] || '其他') === l ? 'selected' : ''}>${esc(l)}</option>`).join('');
     return `<div data-auto-card="${esc(c.id)}" class="border rounded-xl p-2 ${i === s.active ? 'border-gold bg-gold-muted' : 'border-border bg-surface'}">
-      <img src="${esc(c.url)}" data-reins-active="${i}" class="w-full h-28 object-cover rounded-lg cursor-pointer mb-2" onerror="this.style.display='none'">
+      <img src="${esc(c.url)}" data-preview-img="1" data-reins-active="${i}" class="w-full h-28 object-cover rounded-lg cursor-pointer mb-2" onerror="reinsPreviewFailed()">
       <label class="flex items-center gap-2 text-xs mb-2 ${disabled ? 'text-dim' : 'text-muted'}"><input type="checkbox" data-reins-toggle="${esc(c.id)}" ${checked ? 'checked' : ''} ${disabled ? 'disabled' : ''}>選取</label>
       <select data-reins-label="${esc(c.id)}" class="w-full text-xs rounded-lg border border-border bg-surface-card px-2 py-1.5 mb-2" ${disabled ? 'disabled' : ''}>${opts}</select>
       <div class="text-[10px] text-dim">頁 ${esc(c.page)} · ${esc(c.classification)} · Q${esc(c.quality)}</div>
@@ -699,7 +728,7 @@ function renderReinsExtractModal() {
   modal.innerHTML = `<div class="bg-surface-card border border-border rounded-2xl w-full max-w-6xl max-h-[94vh] overflow-y-auto p-5">
     <div class="flex items-center justify-between mb-4"><div><h3 class="text-sm font-bold text-gold">REINS 圖面相片提取</h3><div class="text-[11px] text-dim">確認前不寫入 DB；可用自動候選，或在左邊原始組合圖手動框選。</div></div><button data-close class="w-7 h-7 rounded-full bg-surface-elevated border border-border text-dim hover:text-gold text-sm">✕</button></div>
     <div class="flex gap-2 mb-4 flex-wrap"><button id="autoModeBtn" class="${modeClass('auto')}">自動候選</button><button id="manualModeBtn" class="${modeClass('manual')}">手動框選</button>${sourceTabs}</div>
-    ${source ? `<div class="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-4"><div><div id="reinsCropStage" style="position:relative;display:inline-block;max-width:100%;touch-action:none;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #dfe7e3"><img id="reinsSourceImage" src="${esc(source.url)}" style="display:block;max-width:100%;max-height:68vh;object-fit:contain;user-select:none;-webkit-user-drag:none" draggable="false"><div id="reinsCropOverlay" style="position:absolute;inset:0;touch-action:none"></div></div><div class="text-[11px] text-dim mt-2">原圖 ${esc(source.width)}×${esc(source.height)}px；座標以 naturalWidth / naturalHeight 儲存。</div></div><div><div class="text-xs text-muted mb-2">${s.mode === 'auto' ? '自動候選 ' + cands.length + ' 張，已選 ' + s.selected.size + ' 張' : '手動裁切：拖曳建立框，拖框移動，拖右下角縮放。'}</div><div id="autoCards" class="grid grid-cols-2 gap-2 max-h-[58vh] overflow-y-auto pr-1" style="display:${s.mode === 'auto' ? 'grid' : 'none'}">${autoCards}</div><div id="manualPane" style="display:${s.mode === 'manual' ? 'block' : 'none'}">${manualPane}</div></div></div>` : '<div class="text-xs text-dim py-8 text-center">沒有原始組合圖；請使用「図面を見る」。</div>'}
+    ${source ? `<div class="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-4"><div><div id="reinsCropStage" style="position:relative;display:inline-block;max-width:100%;touch-action:none;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #dfe7e3"><img id="reinsSourceImage" data-preview-img="1" src="${esc(source.url)}" style="display:block;max-width:100%;max-height:68vh;object-fit:contain;user-select:none;-webkit-user-drag:none" draggable="false" onerror="reinsPreviewFailed()"><div id="reinsCropOverlay" style="position:absolute;inset:0;touch-action:none"></div></div><div class="text-[11px] text-dim mt-2">原圖 ${esc(source.width)}×${esc(source.height)}px；座標以 naturalWidth / naturalHeight 儲存。</div></div><div><div class="text-xs text-muted mb-2">${s.mode === 'auto' ? '自動候選 ' + cands.length + ' 張，已選 ' + s.selected.size + ' 張' : '手動裁切：拖曳建立框，拖框移動，拖右下角縮放。'}</div><div id="autoCards" class="grid grid-cols-2 gap-2 max-h-[58vh] overflow-y-auto pr-1" style="display:${s.mode === 'auto' ? 'grid' : 'none'}">${autoCards}</div><div id="manualPane" style="display:${s.mode === 'manual' ? 'block' : 'none'}">${manualPane}</div></div></div>` : '<div class="text-xs text-dim py-8 text-center">沒有原始組合圖；請使用「図面を見る」。</div>'}
     <div class="mt-4 flex gap-3"><button onclick="confirmReinsExtraction()" class="flex-1 bg-gold hover:bg-gold-dark text-black font-bold py-3 rounded-xl text-sm" ${s.selected.size ? '' : 'disabled style="opacity:.4"'}>確認選取</button><button onclick="closeReinsExtractModal()" class="px-4 py-3 rounded-xl border border-border text-xs text-center text-dim">取消</button><a href="${esc((window._listingData||{}).reins_drawing_pdf || '#')}" target="_blank" class="px-4 py-3 rounded-xl border border-border text-xs text-center text-gold">図面を見る</a></div>
   </div>`;
   modal.querySelector('[data-close]').onclick = closeReinsExtractModal;
@@ -715,7 +744,7 @@ function renderReinsExtractModal() {
   if (undo) undo.onclick = reinsUndoManual;
   if (clear) clear.onclick = reinsClearManual;
   if (del) del.onclick = () => reinsExtractState.activeManualId && reinsDeleteManual(reinsExtractState.activeManualId);
-  renderManualOverlay(); renderManualCards();
+  renderManualOverlay(); renderManualCards(); reinsStartImageLoadGuard();
 }
 
 async function confirmReinsExtraction() {

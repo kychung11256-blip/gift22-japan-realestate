@@ -17,6 +17,7 @@ import math
 import os
 import re
 import shutil
+import uuid
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -167,6 +168,7 @@ def _write_manifest(listing_id: str, drawing_pdf: str, candidates: list[Candidat
     manifest = {
         "listing_id": listing_id,
         "drawing_pdf": drawing_pdf,
+        "session_id": uuid.uuid4().hex,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "source_pages": [asdict(p) for p in source_pages],
         "candidates": [asdict(c) for c in candidates],
@@ -270,6 +272,31 @@ def _validate_manual_crop(crop: dict, source: dict) -> tuple[int, int, int, int]
     if right - left < MIN_MANUAL_CROP_SIDE or bottom - top < MIN_MANUAL_CROP_SIDE:
         raise ExtractionError("crop is too small", 422)
     return left, top, right, bottom
+
+
+def _preview_asset_path_from_manifest(listing_id: str, asset_id: str, manifest: dict) -> Path:
+    listing_id = safe_listing_id(listing_id)
+    asset_id = str(asset_id or "").strip()
+    if not SAFE_ID_RE.match(asset_id):
+        raise ExtractionError("invalid preview asset id", 404)
+    assets = list(manifest.get("source_pages") or []) + list(manifest.get("candidates") or [])
+    asset = next((a for a in assets if a.get("id") == asset_id), None)
+    if not asset:
+        raise ExtractionError("preview asset not found", 404)
+    path = Path(asset.get("temp_path") or "").resolve()
+    root = (CONTROLLED_TEMP_ROOT / listing_id).resolve()
+    if root not in path.parents or not path.exists():
+        raise ExtractionError("preview asset path is not allowed", 403)
+    if path.suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp"}:
+        raise ExtractionError("preview asset type is not allowed", 403)
+    return path
+
+
+def preview_asset_path(listing_id: str, asset_id: str) -> tuple[Path, dict]:
+    listing_id = safe_listing_id(listing_id)
+    manifest = load_manifest(listing_id)
+    path = _preview_asset_path_from_manifest(listing_id, asset_id, manifest)
+    return path, manifest
 
 
 def _embedded_candidates(doc, page, page_no: int, out_dir: Path) -> list[Candidate]:

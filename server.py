@@ -3,10 +3,10 @@ Flask backend for Johnny AI Platform.
 JSON API: search, detail, upload, confirm, dashboard stats.
 """
 
-import os, sys, json, uuid, random, threading, time, urllib.request, gzip as _gzip_mod, hmac, traceback
+import os, sys, json, uuid, random, threading, time, urllib.request, gzip as _gzip_mod, hmac, traceback, base64, hashlib, logging, mimetypes, re as _re_mod
 from datetime import datetime, timezone
 from functools import wraps
-from flask import Flask, jsonify, request, send_from_directory, Response, make_response
+from flask import Flask, jsonify, request, send_from_directory, send_file, Response, make_response
 from werkzeug.exceptions import HTTPException
 
 # Load .env file manually if present
@@ -34,10 +34,27 @@ from db import get_db, init_db
 from suumo_scraper import scrape_and_insert
 from suumo_search import search as suumo_search, scrape_detail, import_to_db
 from workbench_api import filter_properties, property_stats, sort_properties, standardize_property
-from reins_photo_extractor import CONTROLLED_TEMP_ROOT, ExtractionError, confirm_candidates, create_manual_crop, preview_candidates
+from reins_photo_extractor import CONTROLLED_TEMP_ROOT, ExtractionError, _preview_asset_path_from_manifest, confirm_candidates, create_manual_crop, load_manifest, preview_asset_path, preview_candidates
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB
+
+
+class _RedactPreviewTokenFilter(logging.Filter):
+    def filter(self, record):
+        def clean(value):
+            if isinstance(value, str):
+                return _re_mod.sub(r'(token=)[^\s&]+', r'\1[REDACTED]', value)
+            return value
+        record.msg = clean(record.msg)
+        if isinstance(record.args, tuple):
+            record.args = tuple(clean(v) for v in record.args)
+        elif isinstance(record.args, dict):
+            record.args = {k: clean(v) for k, v in record.args.items()}
+        return True
+
+
+logging.getLogger('werkzeug').addFilter(_RedactPreviewTokenFilter())
 
 
 def _request_id():
@@ -687,6 +704,96 @@ def _json_load_list(value):
         return []
 
 
+PREVIEW_TOKEN_TTL_SECONDS = 15 * 60
+
+
+def _preview_token_secret():
+    password = os.environ.get('WORKBENCH_PASSWORD', '')
+    if not password:
+        raise ExtractionError('preview token signing is not configured', 503)
+    return hashlib.sha256((password + '|reins-preview-v1').encode('utf-8')).digest()
+
+
+def _manifest_version(manifest):
+    raw = json.dumps({
+        'listing_id': manifest.get('listing_id'),
+        'drawing_pdf': manifest.get('drawing_pdf'),
+        'session_id': manifest.get('session_id'),
+        'generated_at': manifest.get('generated_at'),
+    }, sort_keys=True, ensure_ascii=False).encode('utf-8')
+    return hashlib.sha256(raw).hexdigest()[:24]
+
+
+def _asset_fingerprint(path):
+    st = path.stat()
+    rel = str(path.resolve().relative_to(CONTROLLED_TEMP_ROOT.resolve()))
+    raw = f"{rel}|{int(st.st_size)}|{int(st.st_mtime_ns)}".encode('utf-8')
+    return hashlib.sha256(raw).hexdigest()[:24]
+
+
+def _sign_preview_asset(listing_id, asset_id, manifest, now=None):
+    now = int(now if now is not None else time.time())
+    path = _preview_asset_path_from_manifest(listing_id, asset_id, manifest)
+    payload = {
+        'listing_id': str(listing_id),
+        'session_id': manifest.get('session_id') or '',
+        'asset_id': str(asset_id),
+        'manifest_version': _manifest_version(manifest),
+        'asset_fingerprint': _asset_fingerprint(path),
+        'exp': now + PREVIEW_TOKEN_TTL_SECONDS,
+    }
+    payload_json = json.dumps(payload, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8')
+    payload_b64 = base64.urlsafe_b64encode(payload_json).decode('ascii').rstrip('=')
+    sig = hmac.new(_preview_token_secret(), payload_b64.encode('ascii'), hashlib.sha256).digest()
+    sig_b64 = base64.urlsafe_b64encode(sig).decode('ascii').rstrip('=')
+    return payload_b64 + '.' + sig_b64
+
+
+def _verify_preview_asset_token(token, listing_id, asset_id, manifest, now=None):
+    now = int(now if now is not None else time.time())
+    try:
+        payload_b64, sig_b64 = str(token or '').split('.', 1)
+        expected = hmac.new(_preview_token_secret(), payload_b64.encode('ascii'), hashlib.sha256).digest()
+        provided = base64.urlsafe_b64decode(sig_b64 + '=' * (-len(sig_b64) % 4))
+        if not hmac.compare_digest(expected, provided):
+            raise ExtractionError('invalid preview token', 403)
+        payload = json.loads(base64.urlsafe_b64decode(payload_b64 + '=' * (-len(payload_b64) % 4)).decode('utf-8'))
+    except ExtractionError:
+        raise
+    except Exception:
+        raise ExtractionError('invalid preview token', 403)
+    if int(payload.get('exp') or 0) < now:
+        raise ExtractionError('preview token expired', 403)
+    if payload.get('listing_id') != str(listing_id) or payload.get('asset_id') != str(asset_id):
+        raise ExtractionError('preview token does not match asset', 403)
+    if payload.get('session_id') != (manifest.get('session_id') or ''):
+        raise ExtractionError('preview token session mismatch', 403)
+    if payload.get('manifest_version') != _manifest_version(manifest):
+        raise ExtractionError('preview token manifest mismatch', 403)
+    path, _ = preview_asset_path(listing_id, asset_id)
+    if payload.get('asset_fingerprint') != _asset_fingerprint(path):
+        raise ExtractionError('preview token asset mismatch', 403)
+    return payload
+
+
+def _sign_preview_result(result):
+    listing_id = result.get('listing_id')
+    manifest = load_manifest(listing_id)
+
+    def signed(asset):
+        public = dict(asset)
+        public.pop('temp_path', None)
+        token = _sign_preview_asset(listing_id, public.get('id'), manifest)
+        public['url'] = f"/api/reins-photo-preview-file/{listing_id}/{public.get('id')}?token={token}"
+        return public
+
+    result = dict(result)
+    result['source_pages'] = [signed(p) for p in manifest.get('source_pages', [])]
+    result['candidates'] = [signed(c) for c in manifest.get('candidates', [])]
+    result['preview_token_ttl_seconds'] = PREVIEW_TOKEN_TTL_SECONDS
+    return result
+
+
 @app.route('/api/reins-photo-preview/<listing_id>', methods=['POST'])
 @_workbench_auth_required
 def reins_photo_preview(listing_id):
@@ -703,11 +810,30 @@ def reins_photo_preview(listing_id):
         return jsonify({'code': 0, 'error': 'REINS drawing PDF not found'}), 404
     try:
         result = preview_candidates(row['id'], row['reins_drawing_pdf'])
-        return jsonify(result)
+        return jsonify(_sign_preview_result(result))
     except ExtractionError as e:
         return jsonify({'code': 0, 'error': str(e)}), e.status
     except Exception as e:
         return jsonify({'code': 0, 'error': f'REINS photo extraction failed: {e}'}), 500
+
+
+@app.route('/api/reins-photo-preview-file/<listing_id>/<asset_id>', methods=['GET'])
+def reins_photo_preview_file(listing_id, asset_id):
+    """Serve one temp preview asset by short-lived signed URL; no Basic Auth cache dependency."""
+    token = request.args.get('token') or ''
+    try:
+        path, manifest = preview_asset_path(listing_id, asset_id)
+        _verify_preview_asset_token(token, listing_id, asset_id, manifest)
+        mimetype = mimetypes.guess_type(str(path))[0] or 'application/octet-stream'
+        if mimetype not in {'image/jpeg', 'image/png', 'image/webp'}:
+            return jsonify({'code': 0, 'error': 'preview asset type is not allowed'}), 403
+        resp = send_file(path, mimetype=mimetype, conditional=False, max_age=0)
+        resp.headers['Cache-Control'] = 'private, no-store'
+        return resp
+    except ExtractionError as e:
+        return jsonify({'code': 0, 'error': str(e)}), e.status
+    except Exception as e:
+        return jsonify({'code': 0, 'error': f'preview asset failed: {e}'}), 500
 
 
 @app.route('/api/reins-photo-manual-crop/<listing_id>', methods=['POST'])
@@ -726,7 +852,13 @@ def reins_photo_manual_crop(listing_id):
     if not row['reins_drawing_pdf']:
         return jsonify({'code': 0, 'error': 'REINS drawing PDF not found'}), 404
     try:
-        return jsonify(create_manual_crop(row['id'], row['reins_drawing_pdf'], data))
+        result = create_manual_crop(row['id'], row['reins_drawing_pdf'], data)
+        manifest = load_manifest(row['id'])
+        candidate = dict(result.get('candidate') or {})
+        token = _sign_preview_asset(row['id'], candidate.get('id'), manifest)
+        candidate['url'] = f"/api/reins-photo-preview-file/{row['id']}/{candidate.get('id')}?token={token}"
+        result['candidate'] = candidate
+        return jsonify(result)
     except ExtractionError as e:
         return jsonify({'code': 0, 'error': str(e)}), e.status
     except Exception as e:

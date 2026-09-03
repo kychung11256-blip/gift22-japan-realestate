@@ -142,8 +142,10 @@ tailwind.config = {
 <div id="bulkBar" class="bulk-bar hidden">
   <span class="text-sm text-gold font-semibold" id="bulkCount">已選 0 件</span>
   <button onclick="exportCSV()" class="bg-gold hover:bg-gold-dark text-black font-bold px-4 py-1.5 rounded-full text-xs transition-colors">匯出 CSV</button>
-  <button onclick="selectAll()" class="text-xs text-dim hover:text-muted transition-colors" id="selectAllBtn">全選</button>
-  <button onclick="clearSelection()" class="text-xs text-dim hover:text-muted transition-colors">清除</button>
+  <button onclick="selectAll()" class="text-xs text-dim hover:text-muted transition-colors" id="selectAllBtn">選取本頁</button>
+  <button onclick="deselectCurrentPage()" class="text-xs text-dim hover:text-muted transition-colors">取消本頁</button>
+  <button onclick="clearSelection()" class="text-xs text-dim hover:text-muted transition-colors">清除全部選擇</button>
+  <button onclick="openClientAssignModal()" id="assignClientBtn" class="bg-good hover:bg-good/80 text-black font-bold px-4 py-1.5 rounded-full text-xs transition-colors disabled:opacity-40">加入客人私庫</button>
 </div>
 
 <script>
@@ -151,6 +153,9 @@ const API = '/api/listings';
 let allListings = [];
 let selectedIds = new Set();
 let filteredListings = [];
+let canManage = false;
+let clients = [];
+let selectedClientIds = new Set();
 
 function formatPrice(p) {
   if (p >= 10000) return (p / 10000).toFixed(1) + '億円';
@@ -168,6 +173,12 @@ function sourceLabel(s) {
   if (s === 'upload') return '仲介上傳';
   if (s === 'reins') return 'REINS';
   return s || '上傳';
+}
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s || '';
+  return d.innerHTML;
 }
 
 // ── Filtering ──
@@ -255,7 +266,7 @@ function renderCards(listings) {
   }
   grid.innerHTML = listings.map((l, i) => `
     <div class="reveal relative bg-surface-card border border-border rounded-2xl overflow-hidden hover:border-gold/50 hover:shadow-lg hover:shadow-gold/5 transition-all duration-300 group" style="transition-delay:${i * 50}ms">
-      <div class="card-check ${selectedIds.has(l.id) ? 'checked' : ''}" onclick="event.preventDefault(); event.stopPropagation(); toggleSelect('${l.id}')"></div>
+      ${canManage ? `<div class="card-check ${selectedIds.has(l.id) ? 'checked' : ''}" onclick="event.preventDefault(); event.stopPropagation(); toggleSelect('${l.id}')"></div>` : ''}
       <a href="/listing/${l.id}" class="block">
         <div class="aspect-[4/3] bg-surface-elevated flex items-center justify-center relative overflow-hidden">
           ${(() => {
@@ -310,12 +321,12 @@ function toggleSelect(id) {
 }
 
 function selectAll() {
-  const allIds = filteredListings.map(l => l.id);
-  if (selectedIds.size === allIds.length) {
-    selectedIds.clear();
-  } else {
-    allIds.forEach(id => selectedIds.add(id));
-  }
+  filteredListings.forEach(l => selectedIds.add(l.id));
+  renderCards(filteredListings);
+}
+
+function deselectCurrentPage() {
+  filteredListings.forEach(l => selectedIds.delete(l.id));
   renderCards(filteredListings);
 }
 
@@ -328,14 +339,101 @@ function updateBulkBar() {
   const bar = document.getElementById('bulkBar');
   const count = selectedIds.size;
   document.getElementById('bulkCount').textContent = `已選 ${count} 件`;
-  if (count > 0) {
+  if (canManage && filteredListings.length > 0) {
     bar.classList.remove('hidden');
   } else {
     bar.classList.add('hidden');
   }
-  // Update select all button text
-  const allIds = filteredListings.map(l => l.id);
-  document.getElementById('selectAllBtn').textContent = (count === allIds.length && allIds.length > 0) ? '取消全選' : '全選';
+  document.getElementById('selectAllBtn').textContent = '選取本頁';
+  const assignBtn = document.getElementById('assignClientBtn');
+  if (assignBtn) assignBtn.disabled = count === 0;
+}
+
+
+
+// ── Client private shortlist assignment ──
+function activeSelectedListings() {
+  return allListings.filter(l => selectedIds.has(l.id));
+}
+
+async function loadClientsForModal() {
+  if (clients.length) return clients;
+  const r = await fetch('/api/v1/clients');
+  if (!r.ok) throw new Error(r.status === 401 ? '請先登入 Workbench' : '客人列表讀取失敗');
+  const d = await r.json();
+  clients = d.clients || [];
+  return clients;
+}
+
+function estimateClientAssignment() {
+  const listings = activeSelectedListings();
+  let exists = 0;
+  for (const l of listings) {
+    const assigned = l.clientAssignments || [];
+    for (const cid of selectedClientIds) {
+      if (assigned.some(c => c.id === cid)) exists++;
+    }
+  }
+  const total = listings.length * selectedClientIds.size;
+  return { total, exists, create: total - exists };
+}
+
+async function openClientAssignModal() {
+  if (!selectedIds.size) return alert('請先選取物件');
+  try { await loadClientsForModal(); } catch (e) { alert(e.message); return; }
+  selectedClientIds = new Set();
+  let modal = document.getElementById('clientAssignModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'clientAssignModal';
+    modal.className = 'fixed inset-0 z-[900] bg-black/70 flex items-center justify-center p-4';
+    document.body.appendChild(modal);
+  }
+  renderClientAssignModal();
+}
+
+function renderClientAssignModal() {
+  const modal = document.getElementById('clientAssignModal');
+  const listings = activeSelectedListings();
+  const q = (document.getElementById('clientSearch')?.value || '').trim().toLowerCase();
+  const visible = clients.filter(c => !q || `${c.name} ${c.requirement_text || ''}`.toLowerCase().includes(q));
+  const est = estimateClientAssignment();
+  modal.innerHTML = `<div class="bg-surface-card border border-border rounded-2xl w-full max-w-xl max-h-[88vh] overflow-y-auto p-5">
+    <div class="flex items-center justify-between mb-4"><div><h3 class="text-lg font-bold text-gold">加入客人私庫</h3><div class="text-xs text-dim">已選 ${listings.length} 件物件；確認前不會寫入 DB。</div></div><button onclick="closeClientAssignModal()" class="w-8 h-8 rounded-full bg-surface-elevated border border-border text-dim">✕</button></div>
+    <input id="clientSearch" value="${esc(q)}" oninput="renderClientAssignModal()" placeholder="搜尋客人" class="w-full bg-surface border border-border rounded-xl px-3 py-2 text-sm mb-3 text-white">
+    <div class="space-y-2 mb-4">${visible.map(c => `<label class="flex items-center gap-3 border border-border rounded-xl p-3 bg-surface"><input type="checkbox" data-client-pick="${esc(c.id)}" ${selectedClientIds.has(c.id)?'checked':''}><span class="text-sm text-white">${esc(c.name)}</span><span class="text-xs text-dim">${esc(c.requirement_text || '')}</span></label>`).join('') || '<div class="text-xs text-dim py-4 text-center">未有客人</div>'}</div>
+    <div class="text-xs text-dim mb-4">預計新增關聯 ${est.create}；已存在 ${est.exists}；客人 ${selectedClientIds.size}；物件 ${listings.length}</div>
+    <div class="flex gap-3"><button id="confirmAssignBtn" onclick="confirmClientAssign()" class="flex-1 bg-good text-black font-bold py-3 rounded-xl text-sm disabled:opacity-40" ${selectedClientIds.size ? '' : 'disabled'}>確認加入客人私庫</button><button onclick="closeClientAssignModal()" class="px-4 py-3 rounded-xl border border-border text-xs text-dim">取消</button></div>
+  </div>`;
+  modal.querySelectorAll('[data-client-pick]').forEach(el => el.onchange = () => {
+    if (el.checked) selectedClientIds.add(el.dataset.clientPick); else selectedClientIds.delete(el.dataset.clientPick);
+    renderClientAssignModal();
+  });
+}
+
+function closeClientAssignModal() {
+  const modal = document.getElementById('clientAssignModal');
+  if (modal) modal.remove();
+}
+
+async function confirmClientAssign() {
+  if (!selectedIds.size || !selectedClientIds.size) return;
+  const btn = document.getElementById('confirmAssignBtn');
+  btn.disabled = true;
+  const body = { client_ids: [...selectedClientIds], listing_ids: [...selectedIds] };
+  try {
+    const r = await fetch('/api/client-shortlists/bulk-add', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    const d = await r.json();
+    if (!r.ok || d.code !== 1) throw new Error(d.error || '加入失敗');
+    closeClientAssignModal();
+    selectedIds.clear();
+    clients = [];
+    await load();
+    alert(`已加入客人私庫：新增${d.created}個關聯，已存在${d.already_exists}個`);
+  } catch (e) {
+    alert(e.message);
+    btn.disabled = false;
+  }
 }
 
 // ── CSV Export ──
@@ -376,6 +474,8 @@ async function load() {
     const r = await fetch(API);
     const d = await r.json();
     allListings = d.listings || [];
+    canManage = !!d.canManage;
+    if (!canManage) document.getElementById('bulkBar').classList.add('hidden');
     filteredListings = [...allListings];
     renderCards(filteredListings);
 

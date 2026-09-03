@@ -13,16 +13,18 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import math
 import os
 import re
 import shutil
+import uuid
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
 import pymupdf
-from PIL import Image, ImageStat
+from PIL import Image, ImageOps, ImageStat
 
 BASE_DIR = Path(__file__).resolve().parent
 CONTROLLED_UPLOAD_ROOT = BASE_DIR / "uploads" / "reins-extracted"
@@ -35,9 +37,12 @@ MAX_OUTPUT_EDGE = 1400
 MIN_EMBED_WIDTH = 180
 MIN_EMBED_HEIGHT = 120
 MIN_FALLBACK_SIDE = 160
+MIN_MANUAL_CROP_SIDE = 32
+MAX_MANUAL_CROPS_PER_PAGE = 20
 
 SAFE_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 ROOM_LABELS = {"客廳", "睡房", "廚房", "餐廳", "書房", "LDK", "其他"}
+PHOTO_CATEGORIES = {"室內照片", "外觀", "戶型圖", "景觀", "設備", "其他"}
 
 
 @dataclass
@@ -55,6 +60,25 @@ class Candidate:
     reason: str
     method: str
     source_xref: int | None = None
+    source_image_id: str | None = None
+    normalized_crop: dict | None = None
+
+    def to_dict(self):
+        d = asdict(self)
+        d.pop("temp_path", None)
+        return d
+
+
+@dataclass
+class SourcePage:
+    id: str
+    page: int
+    url: str
+    temp_path: str
+    width: int
+    height: int
+    pdf_width: float
+    pdf_height: float
 
     def to_dict(self):
         d = asdict(self)
@@ -98,7 +122,7 @@ def _web_path(path: Path) -> str:
 
 
 def _save_resized_jpeg(img: Image.Image, dest: Path) -> tuple[int, int]:
-    img = img.convert("RGB")
+    img = ImageOps.exif_transpose(img).convert("RGB")
     w, h = img.size
     scale = min(1.0, MAX_OUTPUT_EDGE / max(w, h))
     if scale < 1.0:
@@ -140,10 +164,13 @@ def _manifest_path(listing_id: str) -> Path:
 
 
 def _write_manifest(listing_id: str, drawing_pdf: str, candidates: list[Candidate]):
+    source_pages = _render_source_pages(drawing_pdf, CONTROLLED_TEMP_ROOT / safe_listing_id(listing_id))
     manifest = {
         "listing_id": listing_id,
         "drawing_pdf": drawing_pdf,
+        "session_id": uuid.uuid4().hex,
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        "source_pages": [asdict(p) for p in source_pages],
         "candidates": [asdict(c) for c in candidates],
     }
     path = _manifest_path(listing_id)
@@ -159,6 +186,117 @@ def load_manifest(listing_id: str) -> dict:
         return json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         raise ExtractionError("invalid preview manifest", 400)
+
+
+def _write_raw_manifest(listing_id: str, manifest: dict):
+    path = _manifest_path(listing_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _render_source_pages(drawing_pdf: str, out_dir: Path) -> list[SourcePage]:
+    pdf_path = web_to_abs_upload_path(drawing_pdf)
+    pages: list[SourcePage] = []
+    doc = pymupdf.open(str(pdf_path))
+    try:
+        for page_no, page in enumerate(doc, 1):
+            if page_no > MAX_PAGES:
+                break
+            pix = page.get_pixmap(matrix=pymupdf.Matrix(2.5, 2.5), alpha=False)
+            dest = out_dir / f"source_page_{page_no}.jpg"
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            pix.save(str(dest), jpg_quality=92)
+            pages.append(SourcePage(
+                id=f"page_{page_no}",
+                page=page_no,
+                url=_web_path(dest),
+                temp_path=str(dest.resolve()),
+                width=int(pix.width),
+                height=int(pix.height),
+                pdf_width=round(float(page.rect.width), 2),
+                pdf_height=round(float(page.rect.height), 2),
+            ))
+    finally:
+        doc.close()
+    return pages
+
+
+def _normalize_bbox(bbox: list[float], page) -> dict | None:
+    try:
+        x0, y0, x1, y1 = [float(v) for v in bbox]
+        page_w = float(page.rect.width)
+        page_h = float(page.rect.height)
+        if page_w <= 0 or page_h <= 0 or x1 <= x0 or y1 <= y0:
+            return None
+        return {
+            "x": max(0.0, min(1.0, x0 / page_w)),
+            "y": max(0.0, min(1.0, y0 / page_h)),
+            "width": max(0.0, min(1.0, (x1 - x0) / page_w)),
+            "height": max(0.0, min(1.0, (y1 - y0) / page_h)),
+        }
+    except Exception:
+        return None
+
+
+def _validate_manual_crop(crop: dict, source: dict) -> tuple[int, int, int, int]:
+    if not isinstance(crop, dict):
+        raise ExtractionError("crop must be an object", 422)
+    values = {}
+    for key in ("x", "y", "width", "height"):
+        try:
+            value = float(crop.get(key))
+        except Exception:
+            raise ExtractionError(f"invalid crop {key}", 422)
+        if not math.isfinite(value):
+            raise ExtractionError(f"invalid crop {key}", 422)
+        if value < 0 or value > 1:
+            raise ExtractionError(f"crop {key} out of range", 422)
+        values[key] = value
+    if values["width"] <= 0 or values["height"] <= 0:
+        raise ExtractionError("crop area must be greater than zero", 422)
+    if values["x"] + values["width"] > 1 or values["y"] + values["height"] > 1:
+        raise ExtractionError("crop exceeds source image bounds", 422)
+
+    src_w = int(source.get("width") or 0)
+    src_h = int(source.get("height") or 0)
+    if src_w <= 0 or src_h <= 0:
+        raise ExtractionError("invalid source image metadata", 400)
+    left = int(round(values["x"] * src_w))
+    top = int(round(values["y"] * src_h))
+    right = int(round((values["x"] + values["width"]) * src_w))
+    bottom = int(round((values["y"] + values["height"]) * src_h))
+    left = max(0, min(src_w, left))
+    top = max(0, min(src_h, top))
+    right = max(0, min(src_w, right))
+    bottom = max(0, min(src_h, bottom))
+    if right - left < MIN_MANUAL_CROP_SIDE or bottom - top < MIN_MANUAL_CROP_SIDE:
+        raise ExtractionError("crop is too small", 422)
+    return left, top, right, bottom
+
+
+def _preview_asset_path_from_manifest(listing_id: str, asset_id: str, manifest: dict) -> Path:
+    listing_id = safe_listing_id(listing_id)
+    asset_id = str(asset_id or "").strip()
+    if not SAFE_ID_RE.match(asset_id):
+        raise ExtractionError("invalid preview asset id", 404)
+    assets = list(manifest.get("source_pages") or []) + list(manifest.get("candidates") or [])
+    asset = next((a for a in assets if a.get("id") == asset_id), None)
+    if not asset:
+        raise ExtractionError("preview asset not found", 404)
+    path = Path(asset.get("temp_path") or "").resolve()
+    root = (CONTROLLED_TEMP_ROOT / listing_id).resolve()
+    if root not in path.parents or not path.exists():
+        raise ExtractionError("preview asset path is not allowed", 403)
+    if path.suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp"}:
+        raise ExtractionError("preview asset type is not allowed", 403)
+    return path
+
+
+def preview_asset_path(listing_id: str, asset_id: str) -> tuple[Path, dict]:
+    listing_id = safe_listing_id(listing_id)
+    manifest = load_manifest(listing_id)
+    path = _preview_asset_path_from_manifest(listing_id, asset_id, manifest)
+    return path, manifest
 
 
 def _embedded_candidates(doc, page, page_no: int, out_dir: Path) -> list[Candidate]:
@@ -187,7 +325,11 @@ def _embedded_candidates(doc, page, page_no: int, out_dir: Path) -> list[Candida
         cid = hashlib.sha256(f"embedded:{page_no}:{xref}:{len(raw)}".encode()).hexdigest()[:16]
         dest = out_dir / f"cand_{page_no}_{cid}.jpg"
         out_w, out_h = _save_resized_jpeg(im, dest)
-        results.append(Candidate(cid, _web_path(dest), str(dest.resolve()), page_no, bbox, out_w, out_h, round(q, 1), cls, excluded, reason, "embedded_xobject", xref))
+        results.append(Candidate(
+            cid, _web_path(dest), str(dest.resolve()), page_no, bbox, out_w, out_h,
+            round(q, 1), cls, excluded, reason, "embedded_xobject", xref,
+            f"page_{page_no}", _normalize_bbox(bbox, page),
+        ))
     return results
 
 
@@ -215,7 +357,11 @@ def _fallback_candidates(page, page_no: int, out_dir: Path) -> list[Candidate]:
         dest = out_dir / f"fallback_{page_no}_{cid}.jpg"
         out_w, out_h = _save_resized_jpeg(crop, dest)
         bbox = [round(x1 * float(page.rect.width), 2), round(y1 * float(page.rect.height), 2), round(x2 * float(page.rect.width), 2), round(y2 * float(page.rect.height), 2)]
-        candidates.append(Candidate(cid, _web_path(dest), str(dest.resolve()), page_no, bbox, out_w, out_h, round(q, 1), cls, excluded, reason, "render_fallback", None))
+        candidates.append(Candidate(
+            cid, _web_path(dest), str(dest.resolve()), page_no, bbox, out_w, out_h,
+            round(q, 1), cls, excluded, reason, "render_fallback", None,
+            f"page_{page_no}", {"x": x1, "y": y1, "width": x2 - x1, "height": y2 - y1},
+        ))
     return candidates
 
 
@@ -247,6 +393,12 @@ def preview_candidates(listing_id: str, drawing_pdf_web: str) -> dict:
 
     candidates = candidates[:MAX_CANDIDATES]
     _write_manifest(listing_id, drawing_pdf_web, candidates)
+    manifest = load_manifest(listing_id)
+    source_pages = []
+    for page in manifest.get("source_pages", []):
+        public = dict(page)
+        public.pop("temp_path", None)
+        source_pages.append(public)
     return {
         "code": 1,
         "listing_id": listing_id,
@@ -254,8 +406,91 @@ def preview_candidates(listing_id: str, drawing_pdf_web: str) -> dict:
         "candidate_count": len(candidates),
         "included_count": sum(1 for c in candidates if not c.excluded and c.classification == "interior_photo"),
         "limits": {"max_pages": MAX_PAGES, "max_candidates": MAX_CANDIDATES, "max_output_edge": MAX_OUTPUT_EDGE},
+        "source_pages": source_pages,
         "candidates": [c.to_dict() for c in candidates],
     }
+
+
+def create_manual_crop(listing_id: str, drawing_pdf_web: str, payload: dict) -> dict:
+    listing_id = safe_listing_id(listing_id)
+    if not isinstance(payload, dict):
+        raise ExtractionError("request body must be an object", 400)
+    allowed = {"source_image_id", "crop", "category", "temp_id"}
+    if set(payload) - allowed:
+        raise ExtractionError("unsupported manual crop field", 400)
+
+    manifest = load_manifest(listing_id)
+    if manifest.get("listing_id") != listing_id or manifest.get("drawing_pdf") != drawing_pdf_web:
+        raise ExtractionError("preview manifest does not match listing/PDF", 403)
+    source_id = str(payload.get("source_image_id") or "").strip()
+    temp_id = str(payload.get("temp_id") or "").strip()
+    if not SAFE_ID_RE.match(temp_id):
+        raise ExtractionError("invalid temporary crop id", 400)
+    category = str(payload.get("category") or "其他").strip()
+    if category not in PHOTO_CATEGORIES:
+        raise ExtractionError("invalid category", 422)
+
+    source_pages = manifest.get("source_pages") or []
+    by_source = {p.get("id"): p for p in source_pages}
+    source = by_source.get(source_id)
+    if not source:
+        raise ExtractionError("unknown source image", 400)
+
+    manual_on_page = [
+        c for c in manifest.get("candidates", [])
+        if c.get("method") == "manual_crop" and c.get("source_image_id") == source_id and c.get("id") != temp_id
+    ]
+    if len(manual_on_page) >= MAX_MANUAL_CROPS_PER_PAGE:
+        raise ExtractionError("too many manual crops on this page", 422)
+    crop_payload = payload.get("crop")
+    if not isinstance(crop_payload, dict):
+        raise ExtractionError("crop must be an object", 422)
+
+    src = Path(source.get("temp_path") or "").resolve()
+    tmp_root = (CONTROLLED_TEMP_ROOT / listing_id).resolve()
+    if tmp_root not in src.parents or not src.exists():
+        raise ExtractionError("source image path is not allowed", 403)
+    box = _validate_manual_crop(crop_payload, source)
+    with Image.open(src) as image:
+        image = ImageOps.exif_transpose(image).convert("RGB")
+        cropped = image.crop(box)
+        out_dir = tmp_root / "manual"
+        dest = (out_dir / f"{temp_id}.jpg").resolve()
+        if out_dir.resolve() not in dest.parents:
+            raise ExtractionError("invalid manual crop path", 403)
+        out_w, out_h = _save_resized_jpeg(cropped, dest)
+
+    x0, y0, x1, y1 = box
+    candidate = {
+        "id": temp_id,
+        "url": _web_path(dest),
+        "temp_path": str(dest),
+        "page": source.get("page"),
+        "bbox": [x0, y0, x1, y1],
+        "width": out_w,
+        "height": out_h,
+        "quality": None,
+        "classification": category,
+        "excluded": False,
+        "reason": "手動裁切",
+        "method": "manual_crop",
+        "source_xref": None,
+        "source_image_id": source_id,
+        "normalized_crop": {
+            "x": float(crop_payload["x"]),
+            "y": float(crop_payload["y"]),
+            "width": float(crop_payload["width"]),
+            "height": float(crop_payload["height"]),
+        },
+        "crop_pixels": {"x": x0, "y": y0, "width": x1 - x0, "height": y1 - y0},
+    }
+    candidates = [c for c in manifest.get("candidates", []) if c.get("id") != temp_id]
+    candidates.append(candidate)
+    manifest["candidates"] = candidates
+    _write_raw_manifest(listing_id, manifest)
+    public = dict(candidate)
+    public.pop("temp_path", None)
+    return {"code": 1, "candidate": public}
 
 
 def confirm_candidates(listing_id: str, drawing_pdf_web: str, selections: Iterable[dict]) -> tuple[list[dict], int]:
@@ -278,14 +513,16 @@ def confirm_candidates(listing_id: str, drawing_pdf_web: str, selections: Iterab
         cand = by_id.get(cid)
         if not cand:
             raise ExtractionError("unknown candidate", 400)
-        if cand.get("excluded") or cand.get("classification") != "interior_photo":
+        if cand.get("excluded") or (cand.get("method") != "manual_crop" and cand.get("classification") != "interior_photo"):
             raise ExtractionError("excluded/non-interior candidate cannot be confirmed", 400)
         src = Path(cand.get("temp_path") or "").resolve()
         tmp_root = (CONTROLLED_TEMP_ROOT / listing_id).resolve()
         if tmp_root not in src.parents or not src.exists():
             raise ExtractionError("candidate path is not allowed", 403)
-        room_label = str(sel.get("room_label") or "其他").strip()
-        if room_label not in ROOM_LABELS:
+        room_label = str(sel.get("room_label") or sel.get("category") or "其他").strip()
+        if cand.get("method") == "manual_crop" and room_label not in PHOTO_CATEGORIES:
+            room_label = cand.get("classification") if cand.get("classification") in PHOTO_CATEGORIES else "其他"
+        elif room_label not in ROOM_LABELS:
             room_label = "其他"
         fname = f"{cid}.jpg"
         dest = (out_dir / fname).resolve()
@@ -297,6 +534,10 @@ def confirm_candidates(listing_id: str, drawing_pdf_web: str, selections: Iterab
             "photo_category": room_label,
             "room_label": room_label,
             "source": "reins_drawing",
+            "extraction_method": cand.get("method") or "auto",
+            "source_image_id": cand.get("source_image_id"),
+            "normalized_crop": cand.get("normalized_crop"),
+            "crop_pixels": cand.get("crop_pixels"),
             "page": cand.get("page"),
             "bbox": cand.get("bbox"),
             "width": cand.get("width"),

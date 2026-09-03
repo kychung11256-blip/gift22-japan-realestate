@@ -3,10 +3,10 @@ Flask backend for Johnny AI Platform.
 JSON API: search, detail, upload, confirm, dashboard stats.
 """
 
-import os, sys, json, uuid, random, threading, time, urllib.request, gzip as _gzip_mod, hmac, traceback
+import os, sys, json, uuid, random, threading, time, urllib.request, gzip as _gzip_mod, hmac, traceback, base64, hashlib, logging, mimetypes, re as _re_mod
 from datetime import datetime, timezone
 from functools import wraps
-from flask import Flask, jsonify, request, send_from_directory, Response, make_response
+from flask import Flask, jsonify, request, send_from_directory, send_file, Response, make_response
 from werkzeug.exceptions import HTTPException
 
 # Load .env file manually if present
@@ -34,10 +34,27 @@ from db import get_db, init_db
 from suumo_scraper import scrape_and_insert
 from suumo_search import search as suumo_search, scrape_detail, import_to_db
 from workbench_api import filter_properties, property_stats, sort_properties, standardize_property
-from reins_photo_extractor import CONTROLLED_TEMP_ROOT, ExtractionError, confirm_candidates, preview_candidates
+from reins_photo_extractor import CONTROLLED_TEMP_ROOT, ExtractionError, _preview_asset_path_from_manifest, confirm_candidates, create_manual_crop, load_manifest, preview_asset_path, preview_candidates
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB
+
+
+class _RedactPreviewTokenFilter(logging.Filter):
+    def filter(self, record):
+        def clean(value):
+            if isinstance(value, str):
+                return _re_mod.sub(r'(token=)[^\s&]+', r'\1[REDACTED]', value)
+            return value
+        record.msg = clean(record.msg)
+        if isinstance(record.args, tuple):
+            record.args = tuple(clean(v) for v in record.args)
+        elif isinstance(record.args, dict):
+            record.args = {k: clean(v) for k, v in record.args.items()}
+        return True
+
+
+logging.getLogger('werkzeug').addFilter(_RedactPreviewTokenFilter())
 
 
 def _request_id():
@@ -119,6 +136,18 @@ def _workbench_auth_required(view):
             )
         return view(*args, **kwargs)
     return wrapped
+
+
+def _workbench_auth_valid():
+    expected_user = os.environ.get('WORKBENCH_USER', 'johnny')
+    expected_password = os.environ.get('WORKBENCH_PASSWORD', '')
+    auth = request.authorization
+    return bool(
+        expected_password
+        and auth
+        and hmac.compare_digest(auth.username or '', expected_user)
+        and hmac.compare_digest(auth.password or '', expected_password)
+    )
 
 # ── Inject venv via WSGI on startup ──
 # (Not needed when running via .venv/bin/python directly)
@@ -545,7 +574,7 @@ def _collection_import_reins(data):
     from reins_import_jobs import create_job, start_job
     job = create_job(items)
     start_job(job['job_id'])
-    return jsonify({'code': 1, 'job_id': job['job_id'], 'total': job['total']})
+    return jsonify({'code': 1, 'job_id': job['job_id'], 'total': job['total'], 'target': 'all_listings'})
 
 
 @app.route('/api/collection/import-status/<job_id>')
@@ -555,12 +584,18 @@ def collection_import_status(job_id):
     job = get_job(job_id)
     if not job:
         return jsonify({'code': 0, 'error': 'job not found'}), 404
+    inserted = sum(1 for it in job['items'] if it.get('status') in ('success', 'partial') and it.get('action') == 'inserted')
+    existing = sum(1 for it in job['items'] if it.get('status') in ('success', 'partial') and it.get('action') in ('updated', 'existing'))
+    failed = sum(1 for it in job['items'] if it.get('status') == 'failed')
     return jsonify({
         'code': 1,
         'job_id': job['job_id'],
         'status': job['status'],
         'total': job['total'],
         'done_count': job['done_count'],
+        'inserted': inserted,
+        'existing': existing,
+        'failed': failed,
         'current_index': job['current_index'],
         'error': job.get('error'),
         'items': job['items'],
@@ -591,24 +626,32 @@ def _collection_import_suumo(data):
         print(f"[import {i}/{total}] {url}", file=sys.stderr, flush=True)
         try:
             d = scrape_detail(url)
+            d['source_url'] = url
             if not d.get('price') and not d.get('address'):
                 results.append({'url': url, 'code': 0, 'error': 'scrape 結果為空（可能俾 SUUMO block 咗）'})
                 continue
-            lid = import_to_db(d)
-            results.append({'url': url, 'code': 1, 'id': lid, 'price': d.get('price'), 'address': d.get('address')})
+            imported = import_to_db(d)
+            if isinstance(imported, tuple):
+                lid, action = imported
+            else:
+                lid, action = imported, 'inserted'
+            results.append({'url': url, 'code': 1, 'id': lid, 'action': action, 'price': d.get('price'), 'address': d.get('address')})
         except Exception as e:
             print(f"[import {i}/{total}] ERROR: {e}", file=sys.stderr, flush=True)
             results.append({'url': url, 'code': 0, 'error': str(e)})
 
-    imported = len([r for r in results if r['code'] == 1])
-    failed = total - imported
+    imported = len([r for r in results if r['code'] == 1 and r.get('action') == 'inserted'])
+    existing = len([r for r in results if r['code'] == 1 and r.get('action') in ('existing', 'updated')])
+    failed = total - imported - existing
     return jsonify({
         'code': 1,
         'imported': imported,
+        'existing': existing,
         'failed': failed,
         'total': total,
         'results': results,
-        'note': 'SUUMO 有 rate limit，建議每次最多匯入 3 件，每件之間會自動 delay 3 秒',
+        'target': 'all_listings',
+        'note': '已加入全部物件；SUUMO 有 rate limit，建議每次最多匯入 3 件，每件之間會自動 delay 3 秒',
     })
 
 # ── Scrape API ──
@@ -632,12 +675,21 @@ def scrape_listing():
 @app.route('/api/listings')
 def all_listings():
     conn = get_db()
-    results = conn.execute("""
-        SELECT * FROM listings WHERE status='published'
+    is_workbench = _workbench_auth_valid()
+    status_filter = "" if is_workbench else "WHERE status='published'"
+    results = conn.execute(f"""
+        SELECT * FROM listings {status_filter}
         ORDER BY price DESC
     """).fetchall()
+    assignments = _v1_client_assignments(conn, [r['id'] for r in results]) if is_workbench and results else {}
     from property_search import filter_local_listings
-    listings = list(reversed(filter_local_listings([_row_to_dict(r) for r in results], "")))
+    raw_listings = []
+    for row in results:
+        data = _row_to_dict(row)
+        if is_workbench:
+            data['clientAssignments'] = assignments.get(data['id'], [])
+        raw_listings.append(data)
+    listings = list(reversed(filter_local_listings(raw_listings, "")))
     conn.close()
 
     # Add raw price fields for consistency
@@ -645,7 +697,7 @@ def all_listings():
         if 'price_raw' in l:
             l['price_per_sqm_raw'] = round(l['price_raw'] / l['size_sqm'], 1) if l.get('size_sqm', 0) > 0 else 0
 
-    return jsonify({'count': len(listings), 'listings': listings})
+    return jsonify({'count': len(listings), 'listings': listings, 'canManage': is_workbench})
 
 # ── Leads API (akiya_bank preliminary clues) ──
 @app.route('/api/listings/leads')
@@ -687,6 +739,96 @@ def _json_load_list(value):
         return []
 
 
+PREVIEW_TOKEN_TTL_SECONDS = 15 * 60
+
+
+def _preview_token_secret():
+    password = os.environ.get('WORKBENCH_PASSWORD', '')
+    if not password:
+        raise ExtractionError('preview token signing is not configured', 503)
+    return hashlib.sha256((password + '|reins-preview-v1').encode('utf-8')).digest()
+
+
+def _manifest_version(manifest):
+    raw = json.dumps({
+        'listing_id': manifest.get('listing_id'),
+        'drawing_pdf': manifest.get('drawing_pdf'),
+        'session_id': manifest.get('session_id'),
+        'generated_at': manifest.get('generated_at'),
+    }, sort_keys=True, ensure_ascii=False).encode('utf-8')
+    return hashlib.sha256(raw).hexdigest()[:24]
+
+
+def _asset_fingerprint(path):
+    st = path.stat()
+    rel = str(path.resolve().relative_to(CONTROLLED_TEMP_ROOT.resolve()))
+    raw = f"{rel}|{int(st.st_size)}|{int(st.st_mtime_ns)}".encode('utf-8')
+    return hashlib.sha256(raw).hexdigest()[:24]
+
+
+def _sign_preview_asset(listing_id, asset_id, manifest, now=None):
+    now = int(now if now is not None else time.time())
+    path = _preview_asset_path_from_manifest(listing_id, asset_id, manifest)
+    payload = {
+        'listing_id': str(listing_id),
+        'session_id': manifest.get('session_id') or '',
+        'asset_id': str(asset_id),
+        'manifest_version': _manifest_version(manifest),
+        'asset_fingerprint': _asset_fingerprint(path),
+        'exp': now + PREVIEW_TOKEN_TTL_SECONDS,
+    }
+    payload_json = json.dumps(payload, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8')
+    payload_b64 = base64.urlsafe_b64encode(payload_json).decode('ascii').rstrip('=')
+    sig = hmac.new(_preview_token_secret(), payload_b64.encode('ascii'), hashlib.sha256).digest()
+    sig_b64 = base64.urlsafe_b64encode(sig).decode('ascii').rstrip('=')
+    return payload_b64 + '.' + sig_b64
+
+
+def _verify_preview_asset_token(token, listing_id, asset_id, manifest, now=None):
+    now = int(now if now is not None else time.time())
+    try:
+        payload_b64, sig_b64 = str(token or '').split('.', 1)
+        expected = hmac.new(_preview_token_secret(), payload_b64.encode('ascii'), hashlib.sha256).digest()
+        provided = base64.urlsafe_b64decode(sig_b64 + '=' * (-len(sig_b64) % 4))
+        if not hmac.compare_digest(expected, provided):
+            raise ExtractionError('invalid preview token', 403)
+        payload = json.loads(base64.urlsafe_b64decode(payload_b64 + '=' * (-len(payload_b64) % 4)).decode('utf-8'))
+    except ExtractionError:
+        raise
+    except Exception:
+        raise ExtractionError('invalid preview token', 403)
+    if int(payload.get('exp') or 0) < now:
+        raise ExtractionError('preview token expired', 403)
+    if payload.get('listing_id') != str(listing_id) or payload.get('asset_id') != str(asset_id):
+        raise ExtractionError('preview token does not match asset', 403)
+    if payload.get('session_id') != (manifest.get('session_id') or ''):
+        raise ExtractionError('preview token session mismatch', 403)
+    if payload.get('manifest_version') != _manifest_version(manifest):
+        raise ExtractionError('preview token manifest mismatch', 403)
+    path, _ = preview_asset_path(listing_id, asset_id)
+    if payload.get('asset_fingerprint') != _asset_fingerprint(path):
+        raise ExtractionError('preview token asset mismatch', 403)
+    return payload
+
+
+def _sign_preview_result(result):
+    listing_id = result.get('listing_id')
+    manifest = load_manifest(listing_id)
+
+    def signed(asset):
+        public = dict(asset)
+        public.pop('temp_path', None)
+        token = _sign_preview_asset(listing_id, public.get('id'), manifest)
+        public['url'] = f"/api/reins-photo-preview-file/{listing_id}/{public.get('id')}?token={token}"
+        return public
+
+    result = dict(result)
+    result['source_pages'] = [signed(p) for p in manifest.get('source_pages', [])]
+    result['candidates'] = [signed(c) for c in manifest.get('candidates', [])]
+    result['preview_token_ttl_seconds'] = PREVIEW_TOKEN_TTL_SECONDS
+    return result
+
+
 @app.route('/api/reins-photo-preview/<listing_id>', methods=['POST'])
 @_workbench_auth_required
 def reins_photo_preview(listing_id):
@@ -703,11 +845,59 @@ def reins_photo_preview(listing_id):
         return jsonify({'code': 0, 'error': 'REINS drawing PDF not found'}), 404
     try:
         result = preview_candidates(row['id'], row['reins_drawing_pdf'])
-        return jsonify(result)
+        return jsonify(_sign_preview_result(result))
     except ExtractionError as e:
         return jsonify({'code': 0, 'error': str(e)}), e.status
     except Exception as e:
         return jsonify({'code': 0, 'error': f'REINS photo extraction failed: {e}'}), 500
+
+
+@app.route('/api/reins-photo-preview-file/<listing_id>/<asset_id>', methods=['GET'])
+def reins_photo_preview_file(listing_id, asset_id):
+    """Serve one temp preview asset by short-lived signed URL; no Basic Auth cache dependency."""
+    token = request.args.get('token') or ''
+    try:
+        path, manifest = preview_asset_path(listing_id, asset_id)
+        _verify_preview_asset_token(token, listing_id, asset_id, manifest)
+        mimetype = mimetypes.guess_type(str(path))[0] or 'application/octet-stream'
+        if mimetype not in {'image/jpeg', 'image/png', 'image/webp'}:
+            return jsonify({'code': 0, 'error': 'preview asset type is not allowed'}), 403
+        resp = send_file(path, mimetype=mimetype, conditional=False, max_age=0)
+        resp.headers['Cache-Control'] = 'private, no-store'
+        return resp
+    except ExtractionError as e:
+        return jsonify({'code': 0, 'error': str(e)}), e.status
+    except Exception as e:
+        return jsonify({'code': 0, 'error': f'preview asset failed: {e}'}), 500
+
+
+@app.route('/api/reins-photo-manual-crop/<listing_id>', methods=['POST'])
+@_workbench_auth_required
+def reins_photo_manual_crop(listing_id):
+    """Create a temp manual crop candidate from a preview source page; no DB write."""
+    data = request.get_json(silent=True) or {}
+    conn = get_db()
+    row = conn.execute(
+        "SELECT id, source, reins_drawing_pdf FROM listings WHERE id = ?",
+        (listing_id,),
+    ).fetchone()
+    conn.close()
+    if not row or row['source'] != 'reins':
+        return jsonify({'code': 0, 'error': 'REINS listing not found'}), 404
+    if not row['reins_drawing_pdf']:
+        return jsonify({'code': 0, 'error': 'REINS drawing PDF not found'}), 404
+    try:
+        result = create_manual_crop(row['id'], row['reins_drawing_pdf'], data)
+        manifest = load_manifest(row['id'])
+        candidate = dict(result.get('candidate') or {})
+        token = _sign_preview_asset(row['id'], candidate.get('id'), manifest)
+        candidate['url'] = f"/api/reins-photo-preview-file/{row['id']}/{candidate.get('id')}?token={token}"
+        result['candidate'] = candidate
+        return jsonify(result)
+    except ExtractionError as e:
+        return jsonify({'code': 0, 'error': str(e)}), e.status
+    except Exception as e:
+        return jsonify({'code': 0, 'error': f'REINS manual crop failed: {e}'}), 500
 
 
 @app.route('/api/reins-photo-confirm/<listing_id>', methods=['POST'])
@@ -955,6 +1145,77 @@ def v1_add_shortlist():
         'client': {'id': client['id'], 'name': client['name']},
         'listingId': listing_id,
     })
+
+
+@app.route('/api/client-shortlists/bulk-add', methods=['POST'])
+@_workbench_auth_required
+def bulk_add_client_shortlists():
+    data = request.get_json(silent=True) or {}
+    client_ids = data.get('client_ids') or []
+    listing_ids = data.get('listing_ids') or []
+    if not isinstance(client_ids, list) or not isinstance(listing_ids, list):
+        return jsonify({'code': 0, 'error': 'client_ids and listing_ids must be lists'}), 400
+    client_ids = [str(x).strip() for x in client_ids if str(x).strip()]
+    listing_ids = [str(x).strip() for x in listing_ids if str(x).strip()]
+    client_ids = list(dict.fromkeys(client_ids))
+    listing_ids = list(dict.fromkeys(listing_ids))
+    if not client_ids or not listing_ids:
+        return jsonify({'code': 0, 'error': 'client_ids and listing_ids are required'}), 400
+    if len(client_ids) > 20:
+        return jsonify({'code': 0, 'error': '最多一次選擇20個客人'}), 400
+    if len(listing_ids) > 50:
+        return jsonify({'code': 0, 'error': '最多一次選擇50個物件'}), 400
+
+    conn = get_db()
+    try:
+        found_clients = {r['id'] for r in conn.execute(
+            "SELECT id FROM clients WHERE status='active' AND id IN (%s)" % ','.join('?' for _ in client_ids),
+            client_ids,
+        ).fetchall()}
+        found_listings = {r['id'] for r in conn.execute(
+            "SELECT id FROM listings WHERE id IN (%s)" % ','.join('?' for _ in listing_ids),
+            listing_ids,
+        ).fetchall()}
+        missing_clients = [x for x in client_ids if x not in found_clients]
+        missing_listings = [x for x in listing_ids if x not in found_listings]
+        if missing_clients or missing_listings:
+            return jsonify({
+                'code': 0,
+                'error': 'Client or listing not found',
+                'missing_clients': missing_clients,
+                'missing_listings': missing_listings,
+            }), 404
+
+        now = datetime.now(timezone.utc).isoformat()
+        created = 0
+        already_exists = 0
+        with conn:
+            for client_id in client_ids:
+                for listing_id in listing_ids:
+                    existing = conn.execute(
+                        "SELECT 1 FROM client_shortlists WHERE client_id=? AND listing_id=?",
+                        (client_id, listing_id),
+                    ).fetchone()
+                    if existing:
+                        already_exists += 1
+                        continue
+                    conn.execute(
+                        "INSERT INTO client_shortlists (client_id, listing_id, search_query, note) VALUES (?,?,?,?)",
+                        (client_id, listing_id, '', ''),
+                    )
+                    created += 1
+            for client_id in client_ids:
+                conn.execute("UPDATE clients SET updated_at=? WHERE id=?", (now, client_id))
+        return jsonify({
+            'code': 1,
+            'created': created,
+            'already_exists': already_exists,
+            'failed': [],
+            'client_count': len(client_ids),
+            'listing_count': len(listing_ids),
+        })
+    finally:
+        conn.close()
 
 
 @app.route('/api/v1/shortlists/<client_id>')

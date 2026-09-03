@@ -94,6 +94,7 @@ input:focus, select:focus { border-color: #164d3d; }
           <option value="5">5分</option><option value="10" selected>10分</option><option value="15">15分</option>
           <option value="20">20分</option><option value="0">指定なし</option>
         </select>
+        <p id="walkHint" class="text-xs text-warn mt-1 hidden">REINS 的步行條件必須配合沿線及車站；車站搜尋功能完成前暫不可用。</p>
       </div>
     </div>
     <div class="flex items-center gap-3">
@@ -133,11 +134,25 @@ function setSource(src) {
   currentSource = src;
   document.getElementById('srcReins').className = 'flex-1 px-4 py-2 rounded-xl text-sm font-semibold border transition-colors ' + (src === 'reins' ? 'bg-gold text-black border-gold' : 'bg-surface-elevated text-dim border-border hover:border-gold/50');
   document.getElementById('srcSuumo').className = 'flex-1 px-4 py-2 rounded-xl text-sm font-semibold border transition-colors ' + (src === 'suumo' ? 'bg-gold text-black border-gold' : 'bg-surface-elevated text-dim border-border hover:border-gold/50');
+  updateWalkControl();
   resetSearchState();
   document.getElementById('resultList').innerHTML = '<div class="text-sm text-dim">輸入條件後撳搜尋</div>';
   updateImportUI();
 }
 window.setSource = setSource;
+
+function updateWalkControl() {
+  const walk = document.getElementById('walk');
+  const hint = document.getElementById('walkHint');
+  if (currentSource === 'reins') {
+    walk.value = '0';
+    walk.disabled = true;
+    hint.classList.remove('hidden');
+  } else {
+    walk.disabled = false;
+    hint.classList.add('hidden');
+  }
+}
 
 function resetSearchState() {
   // 搜尋條件變更 / 切換 source：page reset 1、selected 清空、pageCache 清空
@@ -547,6 +562,7 @@ async function resumeReinsJob(jobId) {
 
 function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
 
+updateWalkControl();
 loadCities();
 </script>
 </body>

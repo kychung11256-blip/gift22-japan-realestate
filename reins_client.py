@@ -337,6 +337,21 @@ def _parse_station_line(s):
     return (parts[0] if parts else ''), ''
 
 
+def _extract_reins_validation_errors(body_text):
+    """Return sanitized REINS validation lines from the current page body."""
+    if '入力に誤りがあります。' not in (body_text or ''):
+        return []
+    lines = []
+    for raw in (body_text or '').splitlines():
+        line = ' '.join(raw.split())
+        if not line:
+            continue
+        if '入力に誤りがあります。' in line or '必須です。' in line or '設定されている場合' in line:
+            if line not in lines:
+                lines.append(line[:200])
+    return lines or ['入力に誤りがあります。']
+
+
 def search_properties(filters, headless=True, timeout_ms=60000):
     """
     REINS 売買物件検索 — 回傳指定頁（page=N，每頁 50 件）。
@@ -529,6 +544,17 @@ def search_properties(filters, headless=True, timeout_ms=60000):
             pg.wait_for_load_state('networkidle', timeout=timeout_ms)
             pg.wait_for_timeout(6000)
 
+            body_after_search = pg.eval_on_selector('body', 'e => e.innerText')
+            validation_errors = _extract_reins_validation_errors(body_after_search)
+            if validation_errors:
+                return {
+                    'code': 0,
+                    'error': 'REINS_VALIDATION_ERROR',
+                    'message': 'REINS 検索条件に誤りがあります',
+                    'detail': validation_errors,
+                    'validation': True,
+                }
+
             # ── 換頁（如 page > 1）：撳真實 pagination button ──
             # REINS 用 Bootstrap-Vue pagination：.p-pagination button[aria-label="Go to page N"]
             if page_num > 1:
@@ -612,7 +638,7 @@ def search_properties(filters, headless=True, timeout_ms=60000):
 
             # 總件數 — 由「1～50件 ／ 500件」呢類標題抽
             import re as _r
-            body = pg.eval_on_selector('body', 'e => e.innerText')
+            body = body_after_search
             total_count = 0
             m = _r.search(r'(\d+)～(\d+)件\s*／\s*(\d+)件', body)
             if m:

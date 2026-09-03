@@ -458,6 +458,14 @@ def collection_search():
     page_num = int(data.get('page', 1) or 1)
 
     if source == 'reins':
+        line = (data.get('line') or '').strip()
+        station = (data.get('station') or '').strip()
+        if walk > 0 and (not line or not station):
+            return jsonify({
+                'code': 0,
+                'error': 'REINS_WALK_REQUIRES_STATION',
+                'message': 'REINS 步行條件必須同時指定沿線及車站',
+            }), 422
         try:
             from reins_client import search_properties as reins_search
         except ImportError as e:
@@ -469,12 +477,22 @@ def collection_search():
             'price_min': pmin or None,
             'price_max': pmax or None,
             'walk_min': walk or None,
+            'line': line or None,
+            'station': station or None,
             'page': page_num,
         })
         if result.get('code') != 1:
             # session expired → 明確 code，前端顯示重新登入，唔好 stealth retry
             if result.get('auth'):
                 return jsonify({'code': 401, 'error': result.get('error'), 'auth': True, 'listings': []}), 200
+            if result.get('validation'):
+                return jsonify({
+                    'code': 0,
+                    'error': result.get('error', 'REINS_VALIDATION_ERROR'),
+                    'message': result.get('message', 'REINS 検索条件に誤りがあります'),
+                    'detail': result.get('detail'),
+                    'listings': [],
+                }), 422
             return jsonify({'code': 0, 'error': result.get('error', 'REINS 搜尋失敗'), 'listings': []}), 502
         # 標記邊啲 reins_id 已喺 DB（供前端顯示「已匯入」）
         listings = result.get('results', [])

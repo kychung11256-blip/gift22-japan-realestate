@@ -2,7 +2,7 @@
 SUUMO Search — find listings, extract data, batch import to DB.
 Mobile UA bypasses rate limiting. No Playwright/browser needed.
 """
-import re, urllib.request, urllib.parse, time, json, sqlite3, os, uuid
+import hashlib, re, urllib.request, urllib.parse, time, json, sqlite3, os, uuid
 from datetime import datetime, timezone
 
 MOBILE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'
@@ -387,6 +387,19 @@ def import_to_db(data):
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
 
+    source_url = (data.get('source_url') or data.get('url') or '').strip()
+    suumo_key = ''
+    if source_url:
+        m = re.search(r'/nc_?([0-9A-Za-z_-]+)/', source_url)
+        suumo_key = (m.group(1) if m else hashlib.sha256(source_url.encode('utf-8')).hexdigest()[:24])
+        existing = conn.execute(
+            "SELECT id FROM listings WHERE source='suumo' AND reins_id=? LIMIT 1",
+            (suumo_key,),
+        ).fetchone()
+        if existing:
+            conn.close()
+            return existing['id'], 'existing'
+
     ts = datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')
     lid = f"SU{ts}{uuid.uuid4().hex[:4].upper()}"
 
@@ -426,23 +439,23 @@ def import_to_db(data):
         id, agent_id, address, station, walk_min, price, price_per_sqm,
         size_sqm, built_year, age, room_layout, orientation, floor, total_floors,
         structure, land_rights, type, yield_surface, yield_net,
-        source, photos, floorplan_url, notes_freetext, transit_lines, floorplan_images,
+        source, photos, floorplan_url, reins_id, notes_freetext, transit_lines, floorplan_images,
         current_status, handover_timing, transaction_type, built_date_full, use_district,
         status, created_at, updated_at,
         mgmt_fee, repair_reserve, repair_fund, other_costs, renovation, parking,
         balcony_sqm, total_units, info_date, next_update,
         listing_agent_name, license_number, land_area_sqm
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (
         lid, 'agent_001', data.get('address',''), data.get('station',''), walk, price, pps,
         size, by, age, data.get('layout',''), data.get('ori',''), floor, tf,
         data.get('structure',''), data.get('land_rights',''), 'マンション', 4.8, 3.7,
         'suumo', json.dumps(data.get('photos',[]), ensure_ascii=False),
-        data.get('floorplan_url',''), notes,
+        data.get('floorplan_url',''), suumo_key, notes,
         json.dumps(data.get('transit_lines',[]), ensure_ascii=False),
         json.dumps(data.get('floorplan_images',[]), ensure_ascii=False),
         data.get('current_status',''), data.get('handover',''), data.get('transaction_type',''),
         data.get('built_full',''), data.get('use_district',''),
-        'published', now, now,
+        'draft', now, now,
         data.get('mgmt_fee',''), data.get('repair_reserve',''), data.get('repair_fund',''),
         data.get('other_costs',''), data.get('renovation',''), data.get('parking',''),
         balcony, total_units,
@@ -468,4 +481,4 @@ def import_to_db(data):
     except Exception:
         pass  # geocode 失敗唔好擋住匯入
 
-    return lid
+    return lid, 'inserted'

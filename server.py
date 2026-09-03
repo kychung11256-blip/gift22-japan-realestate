@@ -137,6 +137,18 @@ def _workbench_auth_required(view):
         return view(*args, **kwargs)
     return wrapped
 
+
+def _workbench_auth_valid():
+    expected_user = os.environ.get('WORKBENCH_USER', 'johnny')
+    expected_password = os.environ.get('WORKBENCH_PASSWORD', '')
+    auth = request.authorization
+    return bool(
+        expected_password
+        and auth
+        and hmac.compare_digest(auth.username or '', expected_user)
+        and hmac.compare_digest(auth.password or '', expected_password)
+    )
+
 # ── Inject venv via WSGI on startup ──
 # (Not needed when running via .venv/bin/python directly)
 
@@ -562,7 +574,7 @@ def _collection_import_reins(data):
     from reins_import_jobs import create_job, start_job
     job = create_job(items)
     start_job(job['job_id'])
-    return jsonify({'code': 1, 'job_id': job['job_id'], 'total': job['total']})
+    return jsonify({'code': 1, 'job_id': job['job_id'], 'total': job['total'], 'target': 'all_listings'})
 
 
 @app.route('/api/collection/import-status/<job_id>')
@@ -572,12 +584,18 @@ def collection_import_status(job_id):
     job = get_job(job_id)
     if not job:
         return jsonify({'code': 0, 'error': 'job not found'}), 404
+    inserted = sum(1 for it in job['items'] if it.get('status') in ('success', 'partial') and it.get('action') == 'inserted')
+    existing = sum(1 for it in job['items'] if it.get('status') in ('success', 'partial') and it.get('action') in ('updated', 'existing'))
+    failed = sum(1 for it in job['items'] if it.get('status') == 'failed')
     return jsonify({
         'code': 1,
         'job_id': job['job_id'],
         'status': job['status'],
         'total': job['total'],
         'done_count': job['done_count'],
+        'inserted': inserted,
+        'existing': existing,
+        'failed': failed,
         'current_index': job['current_index'],
         'error': job.get('error'),
         'items': job['items'],
@@ -608,24 +626,32 @@ def _collection_import_suumo(data):
         print(f"[import {i}/{total}] {url}", file=sys.stderr, flush=True)
         try:
             d = scrape_detail(url)
+            d['source_url'] = url
             if not d.get('price') and not d.get('address'):
                 results.append({'url': url, 'code': 0, 'error': 'scrape 結果為空（可能俾 SUUMO block 咗）'})
                 continue
-            lid = import_to_db(d)
-            results.append({'url': url, 'code': 1, 'id': lid, 'price': d.get('price'), 'address': d.get('address')})
+            imported = import_to_db(d)
+            if isinstance(imported, tuple):
+                lid, action = imported
+            else:
+                lid, action = imported, 'inserted'
+            results.append({'url': url, 'code': 1, 'id': lid, 'action': action, 'price': d.get('price'), 'address': d.get('address')})
         except Exception as e:
             print(f"[import {i}/{total}] ERROR: {e}", file=sys.stderr, flush=True)
             results.append({'url': url, 'code': 0, 'error': str(e)})
 
-    imported = len([r for r in results if r['code'] == 1])
-    failed = total - imported
+    imported = len([r for r in results if r['code'] == 1 and r.get('action') == 'inserted'])
+    existing = len([r for r in results if r['code'] == 1 and r.get('action') in ('existing', 'updated')])
+    failed = total - imported - existing
     return jsonify({
         'code': 1,
         'imported': imported,
+        'existing': existing,
         'failed': failed,
         'total': total,
         'results': results,
-        'note': 'SUUMO 有 rate limit，建議每次最多匯入 3 件，每件之間會自動 delay 3 秒',
+        'target': 'all_listings',
+        'note': '已加入全部物件；SUUMO 有 rate limit，建議每次最多匯入 3 件，每件之間會自動 delay 3 秒',
     })
 
 # ── Scrape API ──
@@ -649,12 +675,21 @@ def scrape_listing():
 @app.route('/api/listings')
 def all_listings():
     conn = get_db()
-    results = conn.execute("""
-        SELECT * FROM listings WHERE status='published'
+    is_workbench = _workbench_auth_valid()
+    status_filter = "" if is_workbench else "WHERE status='published'"
+    results = conn.execute(f"""
+        SELECT * FROM listings {status_filter}
         ORDER BY price DESC
     """).fetchall()
+    assignments = _v1_client_assignments(conn, [r['id'] for r in results]) if is_workbench and results else {}
     from property_search import filter_local_listings
-    listings = list(reversed(filter_local_listings([_row_to_dict(r) for r in results], "")))
+    raw_listings = []
+    for row in results:
+        data = _row_to_dict(row)
+        if is_workbench:
+            data['clientAssignments'] = assignments.get(data['id'], [])
+        raw_listings.append(data)
+    listings = list(reversed(filter_local_listings(raw_listings, "")))
     conn.close()
 
     # Add raw price fields for consistency
@@ -662,7 +697,7 @@ def all_listings():
         if 'price_raw' in l:
             l['price_per_sqm_raw'] = round(l['price_raw'] / l['size_sqm'], 1) if l.get('size_sqm', 0) > 0 else 0
 
-    return jsonify({'count': len(listings), 'listings': listings})
+    return jsonify({'count': len(listings), 'listings': listings, 'canManage': is_workbench})
 
 # ── Leads API (akiya_bank preliminary clues) ──
 @app.route('/api/listings/leads')
@@ -1110,6 +1145,77 @@ def v1_add_shortlist():
         'client': {'id': client['id'], 'name': client['name']},
         'listingId': listing_id,
     })
+
+
+@app.route('/api/client-shortlists/bulk-add', methods=['POST'])
+@_workbench_auth_required
+def bulk_add_client_shortlists():
+    data = request.get_json(silent=True) or {}
+    client_ids = data.get('client_ids') or []
+    listing_ids = data.get('listing_ids') or []
+    if not isinstance(client_ids, list) or not isinstance(listing_ids, list):
+        return jsonify({'code': 0, 'error': 'client_ids and listing_ids must be lists'}), 400
+    client_ids = [str(x).strip() for x in client_ids if str(x).strip()]
+    listing_ids = [str(x).strip() for x in listing_ids if str(x).strip()]
+    client_ids = list(dict.fromkeys(client_ids))
+    listing_ids = list(dict.fromkeys(listing_ids))
+    if not client_ids or not listing_ids:
+        return jsonify({'code': 0, 'error': 'client_ids and listing_ids are required'}), 400
+    if len(client_ids) > 20:
+        return jsonify({'code': 0, 'error': '最多一次選擇20個客人'}), 400
+    if len(listing_ids) > 50:
+        return jsonify({'code': 0, 'error': '最多一次選擇50個物件'}), 400
+
+    conn = get_db()
+    try:
+        found_clients = {r['id'] for r in conn.execute(
+            "SELECT id FROM clients WHERE status='active' AND id IN (%s)" % ','.join('?' for _ in client_ids),
+            client_ids,
+        ).fetchall()}
+        found_listings = {r['id'] for r in conn.execute(
+            "SELECT id FROM listings WHERE id IN (%s)" % ','.join('?' for _ in listing_ids),
+            listing_ids,
+        ).fetchall()}
+        missing_clients = [x for x in client_ids if x not in found_clients]
+        missing_listings = [x for x in listing_ids if x not in found_listings]
+        if missing_clients or missing_listings:
+            return jsonify({
+                'code': 0,
+                'error': 'Client or listing not found',
+                'missing_clients': missing_clients,
+                'missing_listings': missing_listings,
+            }), 404
+
+        now = datetime.now(timezone.utc).isoformat()
+        created = 0
+        already_exists = 0
+        with conn:
+            for client_id in client_ids:
+                for listing_id in listing_ids:
+                    existing = conn.execute(
+                        "SELECT 1 FROM client_shortlists WHERE client_id=? AND listing_id=?",
+                        (client_id, listing_id),
+                    ).fetchone()
+                    if existing:
+                        already_exists += 1
+                        continue
+                    conn.execute(
+                        "INSERT INTO client_shortlists (client_id, listing_id, search_query, note) VALUES (?,?,?,?)",
+                        (client_id, listing_id, '', ''),
+                    )
+                    created += 1
+            for client_id in client_ids:
+                conn.execute("UPDATE clients SET updated_at=? WHERE id=?", (now, client_id))
+        return jsonify({
+            'code': 1,
+            'created': created,
+            'already_exists': already_exists,
+            'failed': [],
+            'client_count': len(client_ids),
+            'listing_count': len(listing_ids),
+        })
+    finally:
+        conn.close()
 
 
 @app.route('/api/v1/shortlists/<client_id>')

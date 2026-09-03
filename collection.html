@@ -242,7 +242,43 @@ async function fetchPage(page, isNewSearch) {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(currentCriteria(page)),
     });
-    const json = await res.json();
+    const httpStatus = res.status;
+    const contentType = res.headers.get('content-type') || '';
+    const responseText = await res.text();
+    console.warn('collection search response', { status: httpStatus, contentType });
+
+    if (!contentType.toLowerCase().includes('application/json')) {
+      const looksLikeHtml = responseText.trimStart().startsWith('<');
+      if ([502, 503, 504].includes(httpStatus) || looksLikeHtml) {
+        status.textContent = '搜尋服務暫時不可用，請稍後再試。';
+      } else {
+        status.textContent = '搜尋服務回傳格式異常，請稍後再試。';
+      }
+      btn.disabled = false; btn.innerHTML = '🔍 搜尋';
+      return;
+    }
+
+    let json;
+    try {
+      json = JSON.parse(responseText);
+    } catch (e) {
+      console.warn('collection search JSON parse failed', { status: httpStatus, contentType });
+      status.textContent = '搜尋服務回傳格式異常，請稍後再試。';
+      btn.disabled = false; btn.innerHTML = '🔍 搜尋';
+      return;
+    }
+
+    if ([502, 503, 504].includes(httpStatus)) {
+      status.textContent = '搜尋服務暫時不可用，請稍後再試。';
+      btn.disabled = false; btn.innerHTML = '🔍 搜尋';
+      return;
+    }
+
+    if (!res.ok || json.code === 0) {
+      status.textContent = json.message || json.error || '搜尋服務暫時不可用，請稍後再試。';
+      btn.disabled = false; btn.innerHTML = '🔍 搜尋';
+      return;
+    }
     if (json.code === 401 || json.auth) {
       status.textContent = '⚠️ REINS session 已失效，請重新登入後再搜尋';
       btn.disabled = false; btn.innerHTML = '🔍 搜尋';

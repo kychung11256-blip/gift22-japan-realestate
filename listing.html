@@ -146,6 +146,7 @@ function dedupeUrls(items) {
 }
 
 function render(p) {
+  const canManage = !!p.canManage;
   const allPhotos = dedupeUrls(p.photos || []);
   const interiorPhotos = (p.interior_photos || []).filter(x => x && (x.url || typeof x === 'string'));
   const interiorPhotoUrls = dedupeUrls(interiorPhotos);
@@ -180,7 +181,7 @@ function render(p) {
   document.getElementById('content').innerHTML = `
     <!-- Source + Price -->
     <div class="flex items-center justify-between mb-4 mt-4">
-      <span class="text-xs font-semibold px-3 py-1 rounded-full bg-surface-card border border-border ${src.cls}">${src.label}</span>
+      ${canManage ? `<span class="text-xs font-semibold px-3 py-1 rounded-full bg-surface-card border border-border ${src.cls}">${src.label}</span>` : '<span></span>'}
       <div class="text-right">
         <div class="text-3xl font-extrabold text-gold">${(p.price||0).toLocaleString()}<span class="text-lg text-dim">万円</span></div>
         ${p.price_per_sqm > 0 ? `<div class="text-xs text-dim">${p.price_per_sqm}万円/m²</div>` : ''}
@@ -215,7 +216,7 @@ function render(p) {
     </div>
     ` : ''}
 
-    <!-- AI 效果圖 (virtual staging) -->
+    ${canManage ? `<!-- AI 效果圖 (virtual staging) -->
     <div class="bg-surface-card border border-border rounded-2xl overflow-hidden mb-6">
       <div class="px-5 pt-4 pb-0 flex items-center justify-between border-b border-border">
         <h2 class="text-sm font-bold text-gold pb-3">AI 效果圖 <span class="text-[10px] text-dim font-normal">(虛擬裝修 / 清空預覽)</span></h2>
@@ -262,7 +263,7 @@ function render(p) {
           </div>`}
         </div>
       </div>
-    </div>
+    </div>` : ''}
 
     <!-- Key Stats -->
     <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
@@ -396,13 +397,13 @@ function render(p) {
     ` : ''}
 
     <!-- Disclaimer -->
-    <div class="bg-bad/5 border border-bad/20 rounded-2xl px-5 py-3.5 text-xs text-bad leading-relaxed mb-6">${DISCLAIMER}</div>
+    <div class="bg-bad/5 border border-bad/20 rounded-2xl px-5 py-3.5 text-xs text-bad leading-relaxed mb-6">${canManage ? DISCLAIMER : '本頁資料只供參考，交易前請透過本平台向專業顧問確認。'}</div>
 
     <!-- Actions -->
     <div class="flex gap-3">
       <a href="/listings" class="flex-1 text-center bg-gold hover:bg-gold-dark text-black font-bold py-3.5 rounded-xl text-sm transition-all duration-200 active:scale-[0.98]">戻る</a>
-      ${p.status === 'draft' ? `<button onclick="confirmListing('${esc(p.id)}')" class="flex-1 border border-gold text-gold font-bold py-3.5 rounded-xl text-sm hover:bg-gold-muted transition-all duration-200 active:scale-[0.98]">確認發佈</button>` : ''}
-      <button onclick="deleteListing('${esc(p.id)}')" class="border border-bad/30 text-bad font-bold py-3.5 px-5 rounded-xl text-sm hover:bg-bad/10 hover:border-bad/60 transition-all duration-200 active:scale-[0.98]">刪除</button>
+      ${canManage && p.status === 'draft' ? `<button onclick="confirmListing('${esc(p.id)}')" class="flex-1 border border-gold text-gold font-bold py-3.5 rounded-xl text-sm hover:bg-gold-muted transition-all duration-200 active:scale-[0.98]">確認發佈</button>` : ''}
+      ${canManage ? `<button onclick="deleteListing('${esc(p.id)}')" class="border border-bad/30 text-bad font-bold py-3.5 px-5 rounded-xl text-sm hover:bg-bad/10 hover:border-bad/60 transition-all duration-200 active:scale-[0.98]">刪除</button>` : ''}
     </div>
   `;
 

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="zh-HK">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -63,7 +63,7 @@ tailwind.config = {
     <div class="flex items-center gap-4">
       <a href="/" class="text-xs text-dim hover:text-muted transition-colors duration-200">首頁</a>
       <a href="/listings" class="text-xs font-semibold text-gold px-3 py-1.5 rounded-full border border-gold/30 hover:border-gold hover:bg-gold-muted transition-colors duration-200">全部物件</a>
-      <a href="/collection" class="text-xs text-gold hover:text-gold-light transition-colors duration-200">物件搜尋</a>
+      <a id="internalCollectionNav" href="/collection" class="hidden text-xs text-gold hover:text-gold-light transition-colors duration-200">物件搜尋</a>
       <a href="/map" class="text-xs text-dim hover:text-muted transition-colors duration-200">地圖</a>
     </div>
   </div>
@@ -99,7 +99,7 @@ tailwind.config = {
   <!-- Filter chips -->
   <div class="mb-5 reveal space-y-2">
     <!-- Price -->
-    <div class="flex items-center gap-2">
+    <div id="internalSourceFilters" class="hidden flex items-center gap-2">
       <span class="text-[10px] text-dim w-10 flex-shrink-0">價格</span>
       <div class="chip-row flex-1">
         <span class="chip" data-filter="price" data-val="0-1000">~1000萬</span>
@@ -276,9 +276,9 @@ function renderCards(listings) {
             const firstImg = fpImgs[0] || extPhotos[0] || '';
             return firstImg
               ? `<img src="${firstImg}" alt="" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" onerror="this.parentElement.innerHTML='<i class=\\'ph ph-image text-3xl text-dim\\'></i>'">`
-              : `<i class="ph ph-image text-3xl text-dim"></i>`;
+              : `<div class="text-center text-dim"><i class="ph ph-image text-3xl"></i><div class="text-[11px] mt-2">安全圖片準備中</div></div>`;
           })()}
-          <span class="absolute top-3 left-3 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gold/20 text-gold border border-gold/30">${sourceBadge(l.source)}</span>
+          ${canManage ? `<span class="absolute top-3 left-3 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gold/20 text-gold border border-gold/30">${sourceBadge(l.source)}</span>` : ''}
           ${(l.yield_surface||0) >= 5.5 ? `<span class="absolute top-3 right-3 text-[10px] font-bold px-2 py-0.5 rounded-full bg-good/20 text-good border border-good/30">高回報</span>` : ''}
         </div>
         <div class="p-4">
@@ -293,7 +293,7 @@ function renderCards(listings) {
             <span class="px-2 py-0.5 rounded-full bg-info/10 text-info">${l.structure||'--'}</span>
             ${l.age ? `<span class="px-2 py-0.5 rounded-full bg-warn/10 text-warn">築${l.age}年</span>` : ''}
             <span class="px-2 py-0.5 rounded-full bg-good/10 text-good">${l.effective_orientation||'朝向待確認'}</span>
-            <span class="px-2 py-0.5 rounded-full bg-gold/10 text-gold">${l.listing_role_label||'身份待確認'}</span>
+            ${canManage ? `<span class="px-2 py-0.5 rounded-full bg-gold/10 text-gold">${l.listing_role_label||'身份待確認'}</span>` : ''}
           </div>
         </div>
       </a>
@@ -475,7 +475,12 @@ async function load() {
     const d = await r.json();
     allListings = d.listings || [];
     canManage = !!d.canManage;
-    if (!canManage) document.getElementById('bulkBar').classList.add('hidden');
+    if (canManage) {
+      document.getElementById('internalCollectionNav').classList.remove('hidden');
+      document.getElementById('internalSourceFilters').classList.remove('hidden');
+    } else {
+      document.getElementById('bulkBar').classList.add('hidden');
+    }
     filteredListings = [...allListings];
     renderCards(filteredListings);
 

@@ -99,7 +99,7 @@ tailwind.config = {
   <!-- Filter chips -->
   <div class="mb-5 reveal space-y-2">
     <!-- Price -->
-    <div id="internalSourceFilters" class="flex items-center gap-2" style="display:none">
+    <div class="flex items-center gap-2">
       <span class="text-[10px] text-dim w-10 flex-shrink-0">價格</span>
       <div class="chip-row flex-1">
         <span class="chip" data-filter="price" data-val="0-1000">~1000萬</span>
@@ -125,10 +125,12 @@ tailwind.config = {
         <span class="chip" data-filter="type" data-val="マンション">マンション</span>
         <span class="chip" data-filter="type" data-val="戸建て">戸建て</span>
         <span class="chip" data-filter="type" data-val="土地">土地</span>
-        <span class="chip" style="width:1px"></span>
-        <span class="chip" data-filter="source" data-val="reins">REINS</span>
-        <span class="chip" data-filter="source" data-val="mysok">マイソク</span>
-        <span class="chip" data-filter="source" data-val="upload">仲介上傳</span>
+        <span id="internalSourceFilters" style="display:none">
+          <span class="chip" style="width:1px"></span>
+          <span class="chip" data-filter="source" data-val="reins">REINS</span>
+          <span class="chip" data-filter="source" data-val="mysok">マイソク</span>
+          <span class="chip" data-filter="source" data-val="upload">仲介上傳</span>
+        </span>
       </div>
     </div>
   </div>
@@ -477,7 +479,7 @@ async function load() {
     canManage = !!d.canManage;
     if (canManage) {
       document.getElementById('internalCollectionNav').classList.remove('hidden');
-      document.getElementById('internalSourceFilters').style.display = '';
+      document.getElementById('internalSourceFilters').style.display = 'contents';
     } else {
       document.getElementById('bulkBar').classList.add('hidden');
     }

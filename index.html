@@ -62,7 +62,7 @@ tailwind.config = {
     <div class="flex items-center gap-4">
       <a href="/" class="text-xs text-dim hover:text-muted transition-colors duration-200">首頁</a>
       <a href="/listings" class="text-xs text-dim hover:text-muted transition-colors duration-200">全部物件</a>
-      <a href="/collection" class="text-xs text-gold hover:text-gold-light transition-colors duration-200">物件搜尋</a>
+      <a id="internalCollectionNav" href="/collection" class="hidden text-xs text-gold hover:text-gold-light transition-colors duration-200">物件搜尋</a>
       <a href="/map" class="text-xs text-dim hover:text-muted transition-colors duration-200">地圖</a>
       <span id="weatherChip" class="text-xs text-dim px-2 py-0.5 rounded-full border border-border" style="display:none"></span>
       <span class="w-2 h-2 rounded-full bg-good"></span>
@@ -103,13 +103,13 @@ tailwind.config = {
           class="bg-gold hover:bg-gold-dark text-black font-bold px-6 py-3 rounded-full text-sm transition-colors duration-200 active:scale-[0.98]">
           搜尋
         </button>
-        <a href="/workbench"
-          class="inline-flex items-center justify-center border border-gold text-gold font-bold px-6 py-3 rounded-full text-sm hover:bg-gold-muted transition-colors duration-200">
+        <a id="internalWorkbenchLink" href="/workbench"
+          class="hidden items-center justify-center border border-gold text-gold font-bold px-6 py-3 rounded-full text-sm hover:bg-gold-muted transition-colors duration-200">
           私人房源站
         </a>
       </div>
       <!-- Search mode toggle -->
-      <div class="flex items-center gap-2 mt-3">
+      <div id="internalSearchModes" class="hidden items-center gap-2 mt-3">
         <span class="text-[11px] text-dim">搜尋範圍：</span>
         <button id="modeLocal" onclick="setSearchMode('local')" class="text-xs px-3 py-1 rounded-full border transition-colors bg-gold text-black border-gold">本地物件</button>
         <button id="modeReins" onclick="setSearchMode('reins')" class="text-xs px-3 py-1 rounded-full border transition-colors bg-surface-elevated text-dim border-border hover:border-gold/50">REINS 智能搜尋</button>
@@ -152,7 +152,7 @@ tailwind.config = {
 </section>
 
 <!-- Operations KPI Bento Grid -->
-<section id="opsKpiSection" class="pb-8 reveal">
+<section id="opsKpiSection" class="hidden pb-8 reveal">
   <div class="flex items-center justify-between mb-5">
     <h2 class="text-lg font-bold tracking-tight">營運數據</h2>
     <span class="text-xs text-dim" id="opsUpdated">更新中...</span>
@@ -231,6 +231,7 @@ tailwind.config = {
 
 <script>
 // Data
+let canManage = false;
 const DATA = {
   "report_date":"2026-06","source":"REINS Market Watch",
   "summary":{"mansion_trend":"成約件數連續3個月減少，m2單價連續2個月下跌，在庫連續4個月增加","house_trend":"成約件數連續3個月增加，價格連續6個月上升，在庫連續5個月減少"},
@@ -263,11 +264,23 @@ async function loadOpsKpi() {
 
 // Init
 async function init(){
+  try {
+    const authState = await fetch('/api/listings').then(r => r.json());
+    canManage = authState.canManage === true;
+  } catch (_) { canManage = false; }
+  if (canManage) {
+    document.getElementById('internalCollectionNav').classList.remove('hidden');
+    document.getElementById('internalWorkbenchLink').classList.remove('hidden');
+    document.getElementById('internalWorkbenchLink').classList.add('inline-flex');
+    document.getElementById('internalSearchModes').classList.remove('hidden');
+    document.getElementById('internalSearchModes').classList.add('flex');
+    document.getElementById('opsKpiSection').classList.remove('hidden');
+  }
   const sel=document.getElementById('valArea');
   Object.keys(DATA.areas).sort().forEach(a=>{sel.innerHTML+=`<option value="${a}">${a}</option>`});
   drawAreaChart();
   drawTrendChart();
-  loadOpsKpi();
+  if(canManage) loadOpsKpi();
   loadMarketIntel();
   loadWeather();
   await loadAllListings();
@@ -390,9 +403,28 @@ async function doReinsSearch(){
 function renderPlan(d){
   const p=d.plan||{};
   const hf=p.hard_filters||{};
-  let html='<div class="text-gold font-semibold mb-1.5">📋 搜尋計劃（SearchPlan）</div>';
+  const labels={
+    pref:'都道府縣',city:'地區',property_type:'物件類型',price_min:'預算下限',price_max:'預算上限',
+    area_min:'面積至少',area_max:'面積最多',land_rights:'土地權利',built_year_from:'築年由',
+    built_year_to:'築年至',floor_min:'樓層至少',floor_max:'樓層最多',room_count_min:'房間至少',
+    room_count_max:'房間最多',layout_type:'間隔',orientation:'座向',walk_min:'步行最多',
+    station:'車站',line:'沿線',building_name:'大廈名稱',new_or_used:'新舊',has_drawing:'有圖則'
+  };
+  const displayValue=(k,v)=>{
+    const x=Array.isArray(v)?v.join('／'):v;
+    if(k==='price_min'||k==='price_max')return Number(x).toLocaleString()+'萬円';
+    if(k==='area_min'||k==='area_max')return x+'㎡';
+    if(k==='floor_min'||k==='floor_max')return x+'樓';
+    if(k==='built_year_from')return x+'年或以後';
+    if(k==='built_year_to')return x+'年或以前';
+    if(k==='walk_min')return x+'分鐘';
+    if(k==='land_rights')return x==='所有権のみ'?'所有權':x==='借地権のみ'?'借地權':x;
+    if(k==='property_type')return x==='売マンション'?'出售住宅單位':x;
+    return x===true?'是':x;
+  };
+  let html='<div class="text-gold font-semibold mb-1.5">✓ 已理解並套用以下搜尋條件</div>';
   if(Object.keys(hf).length){
-    html+='<div class="mb-1"><span class="text-dim">條件：</span>'+Object.entries(hf).map(([k,v])=>`<span class="px-1.5 py-0.5 rounded bg-gold/10 text-gold mr-1">${k}=${Array.isArray(v)?v.join('/'):v}</span>`).join('')+'</div>';
+    html+='<div class="mb-1 flex flex-wrap gap-1">'+Object.entries(hf).map(([k,v])=>`<span class="px-2 py-1 rounded bg-gold/10 text-gold">${esc(labels[k]||k)}：${esc(String(displayValue(k,v)))}</span>`).join('')+'</div>';
   }
   if(p.soft_preferences&&p.soft_preferences.length){
     html+='<div class="mb-1"><span class="text-dim">偏好（唔係硬性篩選）：</span><span class="text-info">'+p.soft_preferences.join('、')+'</span></div>';
@@ -522,15 +554,15 @@ function showResults(results,query){
           ${riskBadge(p.disaster_tsunami||p.disaster?.tsunami||'low','津波')}
         </div>
         <div class="text-xs text-dim mt-2">${p.floor||0}階 / ${p.total_floors||0}階建 · ${p.land_rights||''} · <span class="font-semibold text-gold">${p.listing_role_label||'身份待確認'}</span></div>
-        <div class="grid grid-cols-2 gap-2 mt-3">
+        <div class="grid ${canManage?'grid-cols-2':'grid-cols-1'} gap-2 mt-3">
           <a href="/listing/${p.id}" class="text-center border border-border rounded-lg px-3 py-2 text-xs font-bold text-gold no-underline">查看詳情</a>
-          <button onclick="addLocalToShortlist('${esc(p.id)}',this)" class="bg-gold text-black rounded-lg px-3 py-2 text-xs font-bold">${activeClient()?'加入 '+esc(activeClient().name):'加入客戶私藏'}</button>
+          ${canManage?`<button onclick="addLocalToShortlist('${esc(p.id)}',this)" class="bg-gold text-black rounded-lg px-3 py-2 text-xs font-bold">${activeClient()?'加入 '+esc(activeClient().name):'加入客戶私藏'}</button>`:''}
         </div>
       </article>
     `).join('');
   }
   section.classList.remove('hidden');
-  if(query==='全部物件'){dashboard.classList.remove('hidden');}else{dashboard.classList.add('hidden');}
+  if(canManage&&query==='全部物件'){dashboard.classList.remove('hidden');}else{dashboard.classList.add('hidden');}
 }
 
 function riskBadge(level,label){

@@ -46,6 +46,8 @@ _SYSTEM = """你係一個日本不動產搜尋意圖解析器。將用戶自然�
    - equipment_text, notes_text, neighborhood_text (text, 部分一致)
 3. 模糊嘅偏好（例如「新啲」「平啲」「景觀好」「安靜」「高級感」「適合投資」「管理質素好」「生活便利」「採光好」「適合家庭」）→ 放入 soft_preferences（array of string），**唔好**變成 hard_filters 嘅數字 cutoff。
 4. 明確嘅數字條件（例如「5000万円以下」「60㎡以上」「2LDK」「徒歩10分以内」「築15年以内」）→ 先落 hard_filters。
+   香港／中文常用寫法要正規化：萬=万円；60平=60㎡；3樓以上=floor_min 3；
+   2010年以后/以後建成=built_year_from 2010；所有權/所有权/所有権=所有権のみ。
 5. REINS 做唔到嘅（例如「景觀」「安靜」嘅主觀評價）→ 放 soft_preferences 或 unsupported_preferences。
 6. 如果資訊唔足以決定關鍵 hard filter（例如冇講邊區），放一句落 clarification_needed。
 7. 輸出格式：

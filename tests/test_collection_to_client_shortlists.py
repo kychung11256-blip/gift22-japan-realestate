@@ -1,21 +1,26 @@
 import base64
 import hashlib
 import json
+import secrets
 
 import db
 import server
 
 
+_TEST_USER = "fixture-" + secrets.token_hex(8)
+_TEST_PASSWORD = secrets.token_urlsafe(24)
+
+
 def auth_header():
-    token = base64.b64encode(b"johnny:test-password").decode("ascii")
+    token = base64.b64encode(f"{_TEST_USER}:{_TEST_PASSWORD}".encode()).decode("ascii")
     return {"Authorization": "Basic " + token}
 
 
 def setup_db(tmp_path, monkeypatch):
     database = tmp_path / "flow.db"
     monkeypatch.setattr(db, "DB_PATH", str(database))
-    monkeypatch.setenv("WORKBENCH_USER", "johnny")
-    monkeypatch.setenv("WORKBENCH_PASSWORD", "test-password")
+    monkeypatch.setenv("WORKBENCH_USER", _TEST_USER)
+    monkeypatch.setenv("WORKBENCH_PASSWORD", _TEST_PASSWORD)
     db.init_db()
     return database, server.app.test_client()
 
@@ -61,12 +66,12 @@ def test_collection_suumo_import_adds_only_listings_as_draft_and_dedupes(tmp_pat
     monkeypatch.setattr(server, "import_to_db", fake_import_to_db)
 
     body = {"urls": ["https://suumo.jp/ms/chuko/tokyo/sc_minato/nc_123456789/"]}
-    first = client.post("/api/collection/import", json=body)
+    first = client.post("/api/collection/import", headers=auth_header(), json=body)
     assert first.status_code == 200
     assert first.get_json()["imported"] == 1
     assert first.get_json()["existing"] == 0
 
-    second = client.post("/api/collection/import", json=body)
+    second = client.post("/api/collection/import", headers=auth_header(), json=body)
     assert second.status_code == 200
     assert second.get_json()["imported"] == 0
     assert second.get_json()["existing"] == 1
@@ -101,7 +106,7 @@ def test_reins_import_status_reports_inserted_existing_failed_without_client_lin
 
     import sys
     monkeypatch.setitem(sys.modules, "reins_import_jobs", FakeJobs)
-    resp = server.app.test_client().get("/api/collection/import-status/JOB1")
+    resp = server.app.test_client().get("/api/collection/import-status/JOB1", headers=auth_header())
     assert resp.status_code == 200
     body = resp.get_json()
     assert body["inserted"] == 1

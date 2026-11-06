@@ -1,13 +1,27 @@
+import base64
+import secrets
+
 import pytest
 
 import server
 from reins_client import _extract_reins_validation_errors
 
 
+_TEST_USER = "fixture-" + secrets.token_hex(8)
+_TEST_PASSWORD = secrets.token_urlsafe(24)
+
+
 @pytest.fixture()
 def client(monkeypatch):
+    monkeypatch.setenv("WORKBENCH_USER", _TEST_USER)
+    monkeypatch.setenv("WORKBENCH_PASSWORD", _TEST_PASSWORD)
     server.app.config.update(TESTING=True)
     return server.app.test_client()
+
+
+def auth_header():
+    token = base64.b64encode(f"{_TEST_USER}:{_TEST_PASSWORD}".encode()).decode("ascii")
+    return {"Authorization": "Basic " + token}
 
 
 def test_reins_walk_requires_line_and_station_returns_422(client, monkeypatch):
@@ -24,6 +38,7 @@ def test_reins_walk_requires_line_and_station_returns_422(client, monkeypatch):
 
     resp = client.post(
         "/api/collection/search",
+        headers=auth_header(),
         json={
             "source": "reins",
             "pref": "東京都",
@@ -65,6 +80,7 @@ def test_reins_without_walk_searches_and_preserves_price_man_units(client, monke
 
     resp = client.post(
         "/api/collection/search",
+        headers=auth_header(),
         json={
             "source": "reins",
             "pref": "東京都",
@@ -99,6 +115,7 @@ def test_reins_validation_error_returns_422_not_fake_zero(client, monkeypatch):
 
     resp = client.post(
         "/api/collection/search",
+        headers=auth_header(),
         json={
             "source": "reins",
             "pref": "東京都",
@@ -131,6 +148,7 @@ def test_suumo_walk_min_still_passes_through(client, monkeypatch):
 
     resp = client.post(
         "/api/collection/search",
+        headers=auth_header(),
         json={
             "source": "suumo",
             "pref": "東京都",

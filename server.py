@@ -158,14 +158,17 @@ def index():
 
 # Clean URLs for key pages
 @app.route('/upload')
+@_workbench_auth_required
 def upload_page():
     return send_from_directory('.', 'upload.html')
 
 @app.route('/review')
+@_workbench_auth_required
 def review_page():
     return send_from_directory('.', 'review.html')
 
 @app.route('/mysok')
+@_workbench_auth_required
 def mysok_page():
     return send_from_directory('.', 'mysok_import.html')
 
@@ -174,8 +177,15 @@ def map_page():
     return send_from_directory('.', 'map.html')
 
 @app.route('/collection')
+@_workbench_auth_required
 def collection_page():
     return send_from_directory('.', 'collection.html')
+
+
+@app.route('/reins-documents')
+@_workbench_auth_required
+def reins_documents_page():
+    return send_from_directory('.', 'reins_documents.html')
 
 @app.route('/listings')
 def listings_page():
@@ -198,6 +208,7 @@ import urllib.error as _urllib_err
 AGENT_API_BASE = os.environ.get('AGENT_API_BASE', 'http://localhost:3001')
 
 @app.route('/api/agent/<path:subpath>', methods=['GET','POST','PUT','DELETE','PATCH'])
+@_workbench_auth_required
 def agent_proxy(subpath):
     """
     Proxy requests to Agent Platform (port 3001).
@@ -244,11 +255,10 @@ def static_files(filename):
     # exposed through this catch-all route. workbench.html is intentionally
     # excluded; it is only served by the authenticated /workbench route.
     public_files = {
-        'index.html', 'upload.html', 'review.html', 'mysok_import.html',
-        'map.html', 'collection.html', 'listings.html', 'listing.html',
+        'index.html', 'map.html', 'listings.html', 'listing.html',
         'viewing_route_map.js',
     }
-    public_prefixes = ('vendor/', 'config/', 'uploads/reins/', 'uploads/thumbs/')
+    public_prefixes = ('vendor/', 'config/', 'uploads/thumbs/')
     if filename in public_files or filename.startswith(public_prefixes):
         return send_from_directory('.', filename)
     return jsonify({'error': 'not found'}), 404
@@ -260,7 +270,17 @@ def serve_reins_extract_preview(filename):
     return send_from_directory(CONTROLLED_TEMP_ROOT, filename)
 
 
+@app.route('/uploads/reins/<path:filename>')
+@_workbench_auth_required
+def serve_reins_internal_file(filename):
+    """Raw REINS documents/images are never public customer assets."""
+    return send_from_directory(
+        os.path.join(os.path.dirname(__file__), 'uploads', 'reins'), filename
+    )
+
+
 @app.route('/uploads/reins-extracted/<listing_id>/<path:filename>')
+@_workbench_auth_required
 def serve_reins_extracted_photo(listing_id, filename):
     if not listing_id or '..' in listing_id or '/' in listing_id or filename.startswith('_preview/'):
         return jsonify({'error': 'not found'}), 404
@@ -268,6 +288,7 @@ def serve_reins_extracted_photo(listing_id, filename):
 
 # ── Drafts list API ──
 @app.route('/api/drafts')
+@_workbench_auth_required
 def list_drafts():
     conn = get_db()
     rows = conn.execute("""
@@ -279,6 +300,7 @@ def list_drafts():
 
 # ── Update API ──
 @app.route('/api/update/<listing_id>', methods=['POST'])
+@_workbench_auth_required
 def update_listing(listing_id):
     data = request.get_json(force=True)
     if not data:
@@ -441,6 +463,7 @@ def market_intel():
 
 # ── Collection Search API ──
 @app.route('/api/collection/cities')
+@_workbench_auth_required
 def collection_cities():
     """Return prefecture + city hierarchy for the search dropdown."""
     from suumo_search import CITIES_BY_PREF
@@ -448,6 +471,7 @@ def collection_cities():
 
 # ── Natural Language Search API ──
 @app.route('/api/nl-search', methods=['POST'])
+@_workbench_auth_required
 def nl_search():
     """
     自然語言搜尋。body: {"query": "...", "page": 1}
@@ -474,6 +498,7 @@ def nl_search():
 
 
 @app.route('/api/collection/search', methods=['POST'])
+@_workbench_auth_required
 def collection_search():
     """Search listings. source='reins' → REINS; source='suumo' (default) → SUUMO."""
     data = request.get_json(force=True) or {}
@@ -551,6 +576,7 @@ def collection_search():
 
 # ── Batch Import API ──
 @app.route('/api/collection/import', methods=['POST'])
+@_workbench_auth_required
 def collection_import():
     """Import selected listings into DB. source='reins' → REINS; default → SUUMO."""
     data = request.get_json(force=True) or {}
@@ -578,6 +604,7 @@ def _collection_import_reins(data):
 
 
 @app.route('/api/collection/import-status/<job_id>')
+@_workbench_auth_required
 def collection_import_status(job_id):
     """查詢 background import job 狀態。"""
     from reins_import_jobs import get_job
@@ -603,6 +630,7 @@ def collection_import_status(job_id):
 
 
 @app.route('/api/collection/import-resume/<job_id>', methods=['POST'])
+@_workbench_auth_required
 def collection_import_resume(job_id):
     """Resume 一個 session_expired / 未完成 job。"""
     from reins_import_jobs import resume_job, get_job
@@ -611,6 +639,114 @@ def collection_import_resume(job_id):
         return jsonify({'code': 0, 'error': 'job not found'}), 404
     resume_job(job_id)
     return jsonify({'code': 1, 'job_id': job_id, 'status': 'running'})
+
+
+# ── REINS paid drawing guard / manual cache ───────────────────
+def _reins_document_actor():
+    auth = request.authorization
+    return (auth.username if auth else 'workbench')[:120]
+
+
+def _reins_listing_version(reins_id):
+    conn = get_db()
+    row = conn.execute(
+        "SELECT reins_updated_at FROM listings WHERE source='reins' AND reins_id=? LIMIT 1",
+        (reins_id,),
+    ).fetchone()
+    conn.close()
+    return (row['reins_updated_at'] or 'unknown') if row else None
+
+
+@app.route('/api/reins-documents/<reins_id>/drawing/status')
+@_workbench_auth_required
+def reins_document_status(reins_id):
+    from reins_document_cache import get_status, DocumentCacheError
+    try:
+        listing_version = _reins_listing_version(reins_id)
+        if listing_version is None:
+            return jsonify({'code': 0, 'error': 'LISTING_NOT_FOUND'}), 404
+        item = get_status(reins_id, 'drawing', request.args.get('version', '') or listing_version)
+        return jsonify({'code': 1, 'document': item, 'automaticDownload': False})
+    except DocumentCacheError as e:
+        return jsonify({'code': 0, 'error': e.code, 'message': str(e)}), e.status
+
+
+@app.route('/api/reins-documents/<reins_id>/drawing/request', methods=['POST'])
+@_workbench_auth_required
+def reins_document_request(reins_id):
+    """Register staff intent only.  This endpoint never contacts REINS."""
+    from reins_document_cache import request_purchase, DocumentCacheError
+    data = request.get_json(silent=True) or {}
+    try:
+        listing_version = _reins_listing_version(reins_id)
+        if listing_version is None:
+            return jsonify({'code': 0, 'error': 'LISTING_NOT_FOUND'}), 404
+        item = request_purchase(
+            reins_id, 'drawing', data.get('upstreamVersion', '') or listing_version,
+            actor=_reins_document_actor(),
+            expected_cost_yen=data.get('expectedCostYen', 0),
+            idempotency_key=request.headers.get('Idempotency-Key', ''),
+            confirm_latest=bool(data.get('confirmLatest')),
+        )
+        return jsonify({
+            'code': 1, 'document': item, 'automaticDownload': False,
+            'message': ('已存在有效快取，毋須再次購買。' if item.get('reused')
+                        else '請在 REINS 官方頁手動購買／下載一次，再將 PDF 上傳。'),
+        })
+    except DocumentCacheError as e:
+        return jsonify({'code': 0, 'error': e.code, 'message': str(e)}), e.status
+
+
+@app.route('/api/reins-documents/<reins_id>/drawing/upload', methods=['POST'])
+@_workbench_auth_required
+def reins_document_upload(reins_id):
+    from reins_document_cache import store_uploaded_pdf, DocumentCacheError
+    uploaded = request.files.get('file')
+    if not uploaded:
+        return jsonify({'code': 0, 'error': 'PDF_REQUIRED', 'message': '請選擇已由 REINS 官方頁下載的 PDF。'}), 400
+    version = request.form.get('upstreamVersion', '')
+    try:
+        listing_version = _reins_listing_version(reins_id)
+        if listing_version is None:
+            return jsonify({'code': 0, 'error': 'LISTING_NOT_FOUND'}), 404
+        item = store_uploaded_pdf(
+            reins_id, 'drawing', version or listing_version, uploaded.stream,
+            actor=_reins_document_actor(), cost_yen=request.form.get('costYen', 0),
+        )
+        # Rendering is local and does not make another REINS request.
+        try:
+            from reins_pdf_render import render_drawing_pdf
+            drawing_abs = os.path.join(os.path.dirname(__file__), item['web_path'].lstrip('/'))
+            paths = render_drawing_pdf(drawing_abs, os.path.dirname(drawing_abs))
+            images = [
+                {'url': '/' + os.path.relpath(p, os.path.dirname(__file__)).replace(os.sep, '/'),
+                 'label': f'REINS 図面 {i}'}
+                for i, p in enumerate(paths, 1)
+            ]
+            conn = get_db()
+            conn.execute(
+                "UPDATE listings SET floorplan_images=?, updated_at=datetime('now') WHERE reins_id=?",
+                (json.dumps(images, ensure_ascii=False), reins_id),
+            )
+            conn.commit()
+            conn.close()
+            item['renderedImages'] = len(images)
+        except Exception as render_error:
+            item['renderWarning'] = f'{type(render_error).__name__}: local render failed'
+        return jsonify({'code': 1, 'document': item, 'automaticDownload': False,
+                        'message': 'PDF 已存入本地快取；之後解析及裁圖會重用，毋須再次向 REINS 下載。'})
+    except DocumentCacheError as e:
+        return jsonify({'code': 0, 'error': e.code, 'message': str(e)}), e.status
+
+
+@app.route('/uploads/reins-cache/<path:filename>')
+@_workbench_auth_required
+def serve_reins_cached_document(filename):
+    root = os.path.realpath(os.path.join(os.path.dirname(__file__), 'uploads', 'reins-cache'))
+    target = os.path.realpath(os.path.join(root, filename))
+    if not target.startswith(root + os.sep) or not target.lower().endswith('.pdf'):
+        return jsonify({'error': 'not found'}), 404
+    return send_from_directory(root, filename, mimetype='application/pdf')
 
 
 def _collection_import_suumo(data):
@@ -656,6 +792,7 @@ def _collection_import_suumo(data):
 
 # ── Scrape API ──
 @app.route('/api/scrape', methods=['POST'])
+@_workbench_auth_required
 def scrape_listing():
     data = request.get_json(force=True)
     url = (data.get('url') or '').strip()
@@ -670,6 +807,50 @@ def scrape_listing():
                         'title': result['title'], 'url': '/listing/' + result['id']})
     except Exception as e:
         return jsonify({'code': 0, 'error': str(e)}), 500
+
+# ── Public/customer-safe listing projection ──
+_PUBLIC_MEDIA_PREFIXES = (
+    '/uploads/staged/',
+    '/uploads/thumbs/',
+    '/api/customer-safe-image/',
+)
+
+
+def _public_media_list(value):
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except Exception:
+            value = [value] if value else []
+    if not isinstance(value, list):
+        return []
+    safe = []
+    for item in value:
+        url = item if isinstance(item, str) else (item.get('url') if isinstance(item, dict) else '')
+        if isinstance(url, str) and url.startswith(_PUBLIC_MEDIA_PREFIXES):
+            safe.append(item)
+    return safe
+
+
+def _public_listing_view(data):
+    """Remove upstream broker/contact details and raw source media from public APIs."""
+    out = dict(data)
+    private_fields = {
+        'source', 'source_url', 'reins_id', 'listing_agent_name', 'license_number',
+        'brokerage_type', 'commission_type', 'notes_freetext', 'agent_id',
+        'reins_overview_pdf', 'reins_drawing_pdf', 'reins_registered_at',
+        'reins_updated_at', 'raw_overview', 'raw_drawing',
+    }
+    for key in list(out):
+        if key in private_fields or key.startswith('reins_'):
+            out.pop(key, None)
+    for key in ('photos', 'interior_photos', 'floorplan_images', 'staged_photos'):
+        out[key] = _public_media_list(out.get(key))
+    floorplan = out.get('floorplan_url') or ''
+    out['floorplan_url'] = floorplan if isinstance(floorplan, str) and floorplan.startswith(_PUBLIC_MEDIA_PREFIXES) else ''
+    out['canManage'] = False
+    return out
+
 
 # ── All Listings API (no limit) ──
 @app.route('/api/listings')
@@ -692,6 +873,9 @@ def all_listings():
     listings = list(reversed(filter_local_listings(raw_listings, "")))
     conn.close()
 
+    if not is_workbench:
+        listings = [_public_listing_view(item) for item in listings]
+
     # Add raw price fields for consistency
     for l in listings:
         if 'price_raw' in l:
@@ -701,6 +885,7 @@ def all_listings():
 
 # ── Leads API (akiya_bank preliminary clues) ──
 @app.route('/api/listings/leads')
+@_workbench_auth_required
 def leads_list():
     conn = get_db()
     results = conn.execute("""
@@ -724,7 +909,13 @@ def listing_detail(listing_id):
     if not row:
         return jsonify({'error': 'not found'}), 404
     from property_search import filter_local_listings
-    return jsonify(filter_local_listings([_row_to_dict(row)], "")[0])
+    item = filter_local_listings([_row_to_dict(row)], "")[0]
+    if _workbench_auth_valid():
+        item['canManage'] = True
+        return jsonify(item)
+    if item.get('status') != 'published':
+        return jsonify({'error': 'not found'}), 404
+    return jsonify(_public_listing_view(item))
 
 
 def _json_load_list(value):
@@ -1292,6 +1483,7 @@ def v1_property_review(listing_id):
     return jsonify({'code': 1, 'property': standardize_property(_row_to_dict(updated))})
 
 @app.route('/api/listing/<listing_id>', methods=['DELETE'])
+@_workbench_auth_required
 def delete_listing(listing_id):
     conn = get_db()
     row = conn.execute("SELECT * FROM listings WHERE id = ?", (listing_id,)).fetchone()
@@ -1317,6 +1509,7 @@ def delete_listing(listing_id):
 
 # ── Upload API ──
 @app.route('/api/upload', methods=['POST'])
+@_workbench_auth_required
 def upload():
     data = request.get_json(force=True)
     if not data:
@@ -1442,6 +1635,7 @@ def upload():
 
 # ── Confirm API (draft → published + price validation + MLIT background check) ──
 @app.route('/api/confirm/<listing_id>', methods=['POST'])
+@_workbench_auth_required
 def confirm_listing(listing_id):
     conn = get_db()
     row = conn.execute("SELECT * FROM listings WHERE id = ?", (listing_id,)).fetchone()
@@ -1603,6 +1797,7 @@ def _mlit_background_check(listing_id):
 
 # ── Dashboard stats API ──
 @app.route('/api/dashboard')
+@_workbench_auth_required
 def dashboard():
     conn = get_db()
     published = conn.execute("SELECT COUNT(*) FROM listings WHERE status='published'").fetchone()[0]
@@ -1625,6 +1820,7 @@ def dashboard():
 
 # ── AI Generate Copy API (server-side template generation) ──
 @app.route('/api/ai-generate', methods=['POST'])
+@_workbench_auth_required
 def ai_generate():
     data = request.get_json(force=True)
     if not data:
@@ -1981,6 +2177,7 @@ def _build_keywords_rich(address, room_layout, station, structure, age, orientat
 UPLOAD_DIR = os.path.join(os.path.dirname(__file__), 'uploads', 'mysok')
 
 @app.route('/api/mysok-upload', methods=['POST'])
+@_workbench_auth_required
 def mysok_upload():
     """Receive multipart/form-data files, save to uploads/mysok/, return paths."""
     if 'files' not in request.files:
@@ -2012,6 +2209,7 @@ def mysok_upload():
 
 # ── Photo Upload/Delete API (for review/edit page) ──
 @app.route('/api/upload-photo/<listing_id>', methods=['POST'])
+@_workbench_auth_required
 def upload_photo(listing_id):
     """Upload one photo to a listing, categorized as floorplan or interior."""
     if 'file' not in request.files:
@@ -2054,6 +2252,7 @@ def upload_photo(listing_id):
     return jsonify({'code': 1, 'url': url, 'entry': entry, 'column': col})
 
 @app.route('/api/delete-photo/<listing_id>', methods=['POST'])
+@_workbench_auth_required
 def delete_photo(listing_id):
     """Delete a photo from a listing's floorplan_images or interior_photos."""
     data = request.get_json(force=True)
@@ -2079,6 +2278,7 @@ def delete_photo(listing_id):
 
 # Serve uploaded files
 @app.route('/uploads/mysok/<path:filename>')
+@_workbench_auth_required
 def serve_mysok_upload(filename):
     return send_from_directory(UPLOAD_DIR, filename)
 
@@ -2214,6 +2414,7 @@ def _ciyuan_poll(task_id, max_wait=150, interval=3):
     return None, f'超時（{max_wait}s 內未完成）'
 
 @app.route('/api/staging-generate', methods=['POST'])
+@_workbench_auth_required
 def staging_generate():
     """Generate an AI virtual staging image for an interior photo (not yet saved)."""
     data = request.get_json(force=True)
@@ -2284,6 +2485,7 @@ def serve_staged(filename):
     return send_from_directory(STAGED_DIR, filename)
 
 @app.route('/api/staging-accept/<listing_id>', methods=['POST'])
+@_workbench_auth_required
 def staging_accept(listing_id):
     """Persist an approved staged image into listing.staged_photos[]."""
     data = request.get_json(force=True)
@@ -2319,6 +2521,7 @@ def staging_accept(listing_id):
     return jsonify({'code': 1, 'entry': entry, 'total': len(existing)})
 
 @app.route('/api/staging-delete/<listing_id>', methods=['POST'])
+@_workbench_auth_required
 def staging_delete(listing_id):
     """Remove one staged photo entry from listing.staged_photos[]."""
     data = request.get_json(force=True)
@@ -2346,6 +2549,7 @@ DISCLAIMER = (
 )
 
 @app.route('/api/mysok-parse', methods=['POST'])
+@_workbench_auth_required
 def mysok_parse():
     """Receive structured JSON from client, auto-calculate fields, return full 56-column JSON."""
     data = request.get_json(force=True)
@@ -2511,6 +2715,7 @@ def mysok_parse():
 
 # ── Mysok Parse-Table API (accepts pre-parsed or image_path, auto-calculates) ──
 @app.route('/api/mysok-parse-table', methods=['POST'])
+@_workbench_auth_required
 def mysok_parse_table():
     """Accept structured data or image_path, auto-calculate derived fields."""
     data = request.get_json(force=True)
@@ -2537,6 +2742,7 @@ def mysok_parse_table():
 
 # ── Mysok Parse-Floorplan API ──
 @app.route('/api/mysok-parse-floorplan', methods=['POST'])
+@_workbench_auth_required
 def mysok_parse_floorplan():
     """Accept floorplan data, return structured."""
     data = request.get_json(force=True)
@@ -2548,6 +2754,7 @@ def mysok_parse_floorplan():
 
 # ── Mysok Import API ──
 @app.route('/api/mysok-import', methods=['POST'])
+@_workbench_auth_required
 def mysok_import():
     """Receive full 56-column JSON, write to listings table as draft, source='mysok'."""
     data = request.get_json(force=True)
@@ -2667,6 +2874,7 @@ def mysok_import():
 
 # ── Upload V2 API (extended 56-column support) ──
 @app.route('/api/upload-v2', methods=['POST'])
+@_workbench_auth_required
 def upload_v2():
     """Extended upload endpoint supporting all 56 columns (backward compatible)."""
     data = request.get_json(force=True)

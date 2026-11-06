@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-HK">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>REINS 付費圖紙快取 | Johnny AI</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+  <main class="max-w-2xl mx-auto px-4 py-10">
+    <a href="/collection" class="text-emerald-400 text-sm">← 返回物件搜尋</a>
+    <h1 class="text-2xl font-bold mt-4">REINS 付費圖紙快取</h1>
+    <p class="text-slate-400 mt-2 leading-relaxed">平台唔會自動向 REINS 下載付費圖紙。先建立請求，再喺 REINS 官方頁手動購買一次，最後將 PDF 上傳；相同物件及版本之後會直接重用。</p>
+
+    <section class="mt-7 border border-slate-700 rounded-2xl p-5 space-y-4 bg-slate-900">
+      <label class="block"><span class="text-sm text-slate-300">REINS 物件編號</span><input id="rid" class="mt-1 w-full rounded-lg bg-slate-800 border border-slate-600 px-3 py-2" autocomplete="off"></label>
+      <label class="block"><span class="text-sm text-slate-300">上游版本／最新更新日期</span><input id="version" placeholder="例如 2026-11-06" class="mt-1 w-full rounded-lg bg-slate-800 border border-slate-600 px-3 py-2" autocomplete="off"></label>
+      <label class="block"><span class="text-sm text-slate-300">本次費用（日圓，可留空）</span><input id="cost" type="number" min="0" value="0" class="mt-1 w-full rounded-lg bg-slate-800 border border-slate-600 px-3 py-2"></label>
+      <div class="flex flex-wrap gap-2">
+        <button onclick="checkStatus()" class="px-4 py-2 rounded-lg border border-slate-600">查快取</button>
+        <button onclick="createRequest(false)" class="px-4 py-2 rounded-lg bg-amber-500 text-black font-bold">建立手動購買請求</button>
+      </div>
+      <div id="versionConfirm" class="hidden border border-amber-500/50 rounded-xl p-3 text-sm text-amber-200">
+        已有舊版本快取。只喺你確認 REINS 顯示新版本、並願意再次付費時先繼續。
+        <button onclick="createRequest(true)" class="block mt-2 px-3 py-2 bg-amber-500 text-black rounded-lg font-bold">確認購買最新版本</button>
+      </div>
+      <div class="border-t border-slate-700 pt-4">
+        <label class="block"><span class="text-sm text-slate-300">上傳官方頁下載的 PDF</span><input id="pdf" type="file" accept="application/pdf,.pdf" class="mt-2 block w-full text-sm"></label>
+        <button onclick="uploadPdf()" class="mt-3 px-4 py-2 rounded-lg bg-emerald-500 text-black font-bold">上傳並存入快取</button>
+      </div>
+      <pre id="result" class="whitespace-pre-wrap text-xs bg-slate-950 rounded-xl p-4 min-h-20 text-slate-300"></pre>
+    </section>
+  </main>
+<script>
+const $ = id => document.getElementById(id);
+function params(){ return {rid:$('rid').value.trim(), version:$('version').value.trim(), cost:parseInt($('cost').value)||0}; }
+function show(v){ $('result').textContent = typeof v === 'string' ? v : JSON.stringify(v,null,2); }
+async function readJson(r){ const t=await r.text(); try{return JSON.parse(t)}catch(_){return {code:0,message:'伺服器回傳格式異常',status:r.status}} }
+async function checkStatus(){
+  const p=params(); if(!p.rid)return show('請輸入 REINS 物件編號');
+  const r=await fetch('/api/reins-documents/'+encodeURIComponent(p.rid)+'/drawing/status?version='+encodeURIComponent(p.version));
+  show(await readJson(r));
+}
+async function createRequest(confirmLatest){
+  const p=params(); if(!p.rid||!p.version)return show('請輸入物件編號及版本／更新日期');
+  $('versionConfirm').classList.add('hidden');
+  const r=await fetch('/api/reins-documents/'+encodeURIComponent(p.rid)+'/drawing/request',{
+    method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':p.rid+'-drawing-'+p.version},
+    body:JSON.stringify({upstreamVersion:p.version,expectedCostYen:p.cost,confirmLatest})
+  });
+  const d=await readJson(r); show(d);
+  if(d.error==='REINS_VERSION_CONFIRMATION_REQUIRED')$('versionConfirm').classList.remove('hidden');
+}
+async function uploadPdf(){
+  const p=params(), file=$('pdf').files[0];
+  if(!p.rid||!p.version||!file)return show('請填物件編號、版本，並選擇 PDF');
+  const body=new FormData(); body.append('file',file); body.append('upstreamVersion',p.version); body.append('costYen',p.cost);
+  show('上傳及本地解析中…');
+  const r=await fetch('/api/reins-documents/'+encodeURIComponent(p.rid)+'/drawing/upload',{method:'POST',body});
+  show(await readJson(r));
+}
+</script>
+</body>
+</html>

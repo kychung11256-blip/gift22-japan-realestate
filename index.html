@@ -458,6 +458,9 @@ function showReinsResults(results,d){
         <div class="text-xs text-dim mb-2">${esc(l.address||'')}</div>
         <div class="text-xs text-dim mb-2">${l.area?l.area+'m²':''} ${l.layout?esc(l.layout):''} ${l.floor?l.floor+'階':''}</div>
         <div class="text-xs text-dim mb-2">${esc(l.line||'')} ${esc(l.station||'')} ${l.walk_min?'徒歩'+l.walk_min+'分':''}</div>
+        <div class="flex flex-wrap gap-1 mb-2">
+          ${(l.effective_orientation||l.orientation)?`<span class="text-[10px] px-2 py-0.5 rounded-full bg-good/10 text-good font-semibold">${esc(l.effective_orientation||l.orientation)}向${l.orientation_source==='reins_search_filter'?'（REINS条件）':''}</span>`:'<span class="text-[10px] px-2 py-0.5 rounded-full bg-warn/10 text-warn font-semibold">朝向待確認</span>'}
+        </div>
         <div class="text-[10px] text-dim mb-2">物件番号: ${esc(l.reins_id||'')} ｜ 図面: ${l.drawing_available?'有':'無'}</div>
         <button onclick="importReinsItem('${esc(l.reins_id)}',${!!l.drawing_available},this)" class="w-full mt-1 bg-gold hover:bg-gold-dark text-black text-xs font-bold px-3 py-2 rounded-lg transition-colors">${activeClient()?'匯入並加入 '+esc(activeClient().name):'匯入此物件 →'}</button>
       </div>

@@ -8,7 +8,7 @@ import pytest
 
 from search_plan import validate_plan, plan_summary, empty_plan
 from nl_rule_parser import parse_rule_based
-from nl_search import build_search_plan, plan_to_reins_filters
+from nl_search import build_search_plan, plan_to_reins_filters, _post_filter_and_rank
 
 
 # ── validator ──
@@ -330,3 +330,13 @@ def test_search_plan_ui_uses_customer_friendly_labels():
     assert "land_rights:'土地權利'" in html
     assert "built_year_from:'築年由'" in html
     assert "floor_min:'樓層至少'" in html
+
+
+def test_post_filter_marks_reins_orientation_filter_source():
+    plan = validate_plan({'hard_filters': {'orientation': ['南']}})
+    rows = [{'reins_id': '1001', 'building_name': 'テスト物件'}]
+    ranked = _post_filter_and_rank(rows, plan)
+    assert ranked[0]['effective_orientation'] == '南'
+    assert ranked[0]['orientation_source'] == 'reins_search_filter'
+    assert ranked[0]['orientation_filter_applied'] is True
+    assert 'effective_orientation' not in rows[0]

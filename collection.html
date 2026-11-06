@@ -54,6 +54,7 @@ input:focus, select:focus { border-color: #164d3d; }
       <a href="/" class="text-xs text-dim hover:text-muted">首頁</a>
       <a href="/listings" class="text-xs text-dim hover:text-muted">全部物件</a>
       <a href="/collection" class="text-xs text-gold">物件搜尋</a>
+      <a href="/reins-documents" class="text-xs text-dim hover:text-muted">付費圖紙</a>
       <a href="/map" class="text-xs text-dim hover:text-muted">地圖</a>
     </div>
   </div>
@@ -167,7 +168,7 @@ function updateImportUI() {
   const note = document.getElementById('importNote');
   note.style.display = currentListings.length ? 'inline' : 'none';
   note.textContent = currentSource === 'reins'
-    ? `加入全部物件：最多 ${IMPORT_MAX} 件，會逐件處理並可 resume`
+    ? `加入全部物件：最多 ${IMPORT_MAX} 件；不會自動購買／下載付費圖紙`
     : '加入全部物件：SUUMO 有 rate limit，建議每次最多 3 件';
   btn.style.display = currentListings.length ? 'inline-flex' : 'none';
 }
@@ -565,7 +566,11 @@ async function pollReinsJob(jobId) {
 function renderReinsJobProgress(job) {
   const icons = { success: '✓', partial: '!', failed: '✗', processing: '…', pending: '○' };
   const statusText = it => {
-    if (it.status === 'success') return it.has_drawing ? '已加入 / 図面有' : '已加入 / 図面なし';
+    if (it.status === 'success') {
+      if (it.has_drawing) return '已加入 / 使用本地圖紙快取';
+      if (it.drawing_deferred) return '已加入 / 圖紙待手動購買';
+      return '已加入 / 圖紙なし';
+    }
     if (it.status === 'partial') return '已加入 / 図面取得失敗';
     if (it.status === 'failed') return '失敗: ' + (it.error || '');
     if (it.status === 'processing') return '處理中';

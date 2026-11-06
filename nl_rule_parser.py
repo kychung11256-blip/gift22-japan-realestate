@@ -136,8 +136,9 @@ def parse_rule_based(query):
         matched_any = True
 
     # ── 價格 ──
-    # 支援「万」同「億」（1億 = 10000万）。「X万円以下」「X億以下」「X-X万」
-    m = re.search(r'(\d+(?:\.\d+)?)\s*[～~\-至到]\s*(\d+(?:\.\d+)?)\s*万', q)
+    # 香港客人常用繁體「萬」及「預算」；REINS 最終一律轉做万円。
+    # 支援「8000-15000萬預算」「8000至15000万円」「1億円以下」。
+    m = re.search(r'(\d+(?:\.\d+)?)\s*[～~\-—–至到]\s*(\d+(?:\.\d+)?)\s*[万萬](?:円|日圓|日元)?', q)
     if m:
         plan_hf['price_min'] = float(m.group(1))
         plan_hf['price_max'] = float(m.group(2))
@@ -154,24 +155,24 @@ def parse_rule_based(query):
                 plan_hf['price_min'] = float(m.group(1)) * 10000
                 matched_any = True
             else:
-                m = re.search(r'(\d+(?:\.\d+)?)\s*万円?\s*以下', q)
+                m = re.search(r'(\d+(?:\.\d+)?)\s*[万萬](?:円|日圓|日元)?\s*(?:以下|以内|以內)', q)
                 if m:
                     plan_hf['price_max'] = float(m.group(1))
                     matched_any = True
                 else:
-                    m = re.search(r'(\d+(?:\.\d+)?)\s*万円?\s*以上', q)
+                    m = re.search(r'(\d+(?:\.\d+)?)\s*[万萬](?:円|日圓|日元)?\s*以上', q)
                     if m:
                         plan_hf['price_min'] = float(m.group(1))
                         matched_any = True
 
     # ── 面積 ──
-    m = re.search(r'(\d+(?:\.\d+)?)\s*[～~\-至到]\s*(\d+(?:\.\d+)?)\s*(?:㎡|平米|平方米?)', q)
+    m = re.search(r'(\d+(?:\.\d+)?)\s*[～~\-—–至到]\s*(\d+(?:\.\d+)?)\s*(?:㎡|m²|m2|平米|平方米?|平)(?!屋)', q, re.IGNORECASE)
     if m:
         plan_hf['area_min'] = float(m.group(1))
         plan_hf['area_max'] = float(m.group(2))
         matched_any = True
     else:
-        m = re.search(r'(\d+(?:\.\d+)?)\s*(?:㎡|平米|平方米?)\s*以上', q)
+        m = re.search(r'(\d+(?:\.\d+)?)\s*(?:㎡|m²|m2|平米|平方米?|平)(?!屋)\s*以上', q, re.IGNORECASE)
         if m:
             plan_hf['area_min'] = float(m.group(1))
             matched_any = True
@@ -197,6 +198,14 @@ def parse_rule_based(query):
             matched_any = True
             break
 
+    # ── 所有權／借地權 ──
+    if any(x in q for x in ('所有権', '所有權', '所有权', '永久業權', '永久业权')):
+        plan_hf['land_rights'] = '所有権のみ'
+        matched_any = True
+    elif any(x in q for x in ('借地権', '借地權', '借地权')):
+        plan_hf['land_rights'] = '借地権のみ'
+        matched_any = True
+
     # ── 築年 ──
     m = re.search(r'築\s*(\d+)\s*年\s*以内', q)
     if m:
@@ -205,6 +214,28 @@ def parse_rule_based(query):
         yr = datetime.datetime.now().year - int(m.group(1))
         plan_hf['built_year_from'] = yr
         matched_any = True
+    else:
+        # 「2010年以後建成」「2010年以后」「2010年起」「2010年以降」
+        m = re.search(r'(19\d{2}|20\d{2})\s*年?\s*(?:以後|以后|之後|之后|後|后|起|以降)(?:\s*(?:建成|落成|築))?', q)
+        if m:
+            plan_hf['built_year_from'] = int(m.group(1))
+            matched_any = True
+        else:
+            m = re.search(r'(19\d{2}|20\d{2})\s*年?\s*(?:以前|之前|或以前|まで)', q)
+            if m:
+                plan_hf['built_year_to'] = int(m.group(1))
+                matched_any = True
+
+    # ── 所在樓層 ──
+    m = re.search(r'(\d+)\s*(?:樓|楼|層|层|階)\s*(?:或)?以上', q)
+    if m:
+        plan_hf['floor_min'] = int(m.group(1))
+        matched_any = True
+    else:
+        m = re.search(r'(\d+)\s*(?:樓|楼|層|层|階)\s*(?:或)?以下', q)
+        if m:
+            plan_hf['floor_max'] = int(m.group(1))
+            matched_any = True
 
     # ── 物件種別 ──
     if 'マンション' in q or '公寓' in q or '住宅大廈' in q:
@@ -224,6 +255,8 @@ def parse_rule_based(query):
 
     # ── 模糊偏好 → soft_preferences ──
     for kw in _SOFT_KEYWORDS:
+        if kw == '平' and re.search(r'\d+(?:\.\d+)?\s*平(?:\s*以上)?', q):
+            continue  # 「60平以上」係明確面積，唔係「平啲」價格偏好
         if kw in q:
             soft.append(kw)
             matched_any = True  # 有偏好都係有內容

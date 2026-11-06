@@ -394,6 +394,15 @@ def search_properties(filters, headless=True, timeout_ms=60000):
     building_name = (filters.get('building_name') or '').strip()
     station = (filters.get('station') or '').strip()
     line = (filters.get('line') or '').strip()
+    land_rights = filters.get('land_rights')
+    new_or_used = filters.get('new_or_used')
+    built_year_from = filters.get('built_year_from')
+    built_year_to = filters.get('built_year_to')
+    floor_min = filters.get('floor_min')
+    floor_max = filters.get('floor_max')
+    room_count_min = filters.get('room_count_min')
+    room_count_max = filters.get('room_count_max')
+    corner_room = filters.get('corner_room')
 
     if not pref and not city and not station and not line and not building_name:
         return {'code': 0, 'error': 'pref/city/station/line/building_name 至少要一個'}
@@ -478,6 +487,14 @@ def search_properties(filters, headless=True, timeout_ms=60000):
             if price_max is not None:
                 _fill('#__BVID__479', str(price_max))
 
+            # 新築/中古、土地権利（Bootstrap custom radio）
+            _NEW_USED_SEL = {'指定なし': '#__BVID__312', '新築': '#__BVID__313', '中古': '#__BVID__314'}
+            _LAND_RIGHTS_SEL = {'指定なし': '#__BVID__318', '所有権のみ': '#__BVID__319', '借地権のみ': '#__BVID__320'}
+            if new_or_used in _NEW_USED_SEL:
+                _check_custom_checkbox(pg, _NEW_USED_SEL[new_or_used])
+            if land_rights in _LAND_RIGHTS_SEL:
+                _check_custom_checkbox(pg, _LAND_RIGHTS_SEL[land_rights])
+
             # ── 擴充 hard filters ──
             # 所在地/建物名
             if building_name:
@@ -499,6 +516,17 @@ def search_properties(filters, headless=True, timeout_ms=60000):
                 _fill('#__BVID__507', str(area_min))
             if area_max is not None:
                 _fill('#__BVID__509', str(area_max))
+            # 間取部屋数、所在階
+            if room_count_min is not None:
+                _fill('#__BVID__512', str(room_count_min))
+            if room_count_max is not None:
+                _fill('#__BVID__514', str(room_count_max))
+            if corner_room:
+                _check_custom_checkbox(pg, '#__BVID__517')
+            if floor_min is not None:
+                _fill('#__BVID__541', str(floor_min))
+            if floor_max is not None:
+                _fill('#__BVID__543', str(floor_max))
             # 間取タイプ（multi checkbox）：REINS 用 Bootstrap custom checkbox，
             # input 被 overlay 遮住，要 click label[for] 先 work（直接 check() 會 timeout）。
             _LAYOUT_SEL = {
@@ -519,6 +547,38 @@ def search_properties(filters, headless=True, timeout_ms=60000):
             # 図面ありのみ（custom checkbox，同樣 click label）
             if has_drawing:
                 _check_custom_checkbox(pg, '#__BVID__323')
+
+            def _select_year(selector, year):
+                """REINS option label includes Japanese era; match its Gregorian prefix."""
+                if year is None:
+                    return False
+                try:
+                    el = pg.query_selector(selector)
+                    if not el:
+                        return False
+                    for option in el.query_selector_all('option'):
+                        label = (option.text_content() or '').strip()
+                        if label == str(year) or label.startswith(f'{int(year)}年'):
+                            value = option.get_attribute('value')
+                            if value is not None:
+                                pg.select_option(selector, value=value)
+                            else:
+                                pg.select_option(selector, label=label)
+                            return True
+                except Exception:
+                    pass
+                return False
+
+            if built_year_from is not None and _select_year('#__BVID__582', built_year_from):
+                try:
+                    pg.select_option('#__BVID__584', label='1')
+                except Exception:
+                    pass
+            if built_year_to is not None and _select_year('#__BVID__586', built_year_to):
+                try:
+                    pg.select_option('#__BVID__588', label='12')
+                except Exception:
+                    pass
             pg.wait_for_timeout(500)
 
             # ── 撳「検索」──
@@ -962,10 +1022,17 @@ def _go_to_search_page(pg, timeout_ms):
 
 def download_drawing_pdf(reins_id, headless=True, timeout_ms=60000):
     """
-    為指定物件觸發「図面」PDF 下載。
-    保存去 uploads/reins/<reins_id>/drawing.pdf。
-    返回 (web_path, None) 或 (None, error)。
+    Disabled cost-bearing legacy entry point.
+
+    Paid drawings must be purchased by staff in the official REINS UI and
+    uploaded to the local document cache.  Keeping this function as a hard
+    failure prevents old callers from silently incurring another fee.
     """
+    return None, 'Automatic paid drawing download is disabled; use the manual REINS document cache'
+
+    # Legacy implementation retained below temporarily for reference.  It is
+    # unreachable by design and should be removed after the manual flow has
+    # been deployed and observed.
     if not _has_storage_state():
         return None, 'No REINS session'
 
@@ -1055,7 +1122,11 @@ def download_drawing_pdf(reins_id, headless=True, timeout_ms=60000):
 def import_reins_listing(reins_id, drawing_available=False, headless=True):
     """
     單件 REINS import：download overview PDF → coordinate parser → normalize →
-    upsert listings DB → geocode →（如有）download drawing PDF → 更新 DB。
+    upsert listings DB → geocode → reuse an already purchased local drawing cache.
+
+    ``drawing_available`` only records that REINS advertises a drawing.  It must
+    never trigger a paid download.  Staff purchase the drawing in the official
+    REINS UI and upload it through /reins-documents; later imports reuse it.
 
     返回 dict：{'code': 1, 'id': listing_id, 'action': 'inserted'|'updated', ...}
     或 {'code': 0, 'error': ...}
@@ -1078,15 +1149,17 @@ def import_reins_listing(reins_id, drawing_available=False, headless=True):
     if not parsed.get('price') or not parsed.get('address'):
         return {'code': 0, 'error': 'parser 抽唔到 price/address，唔會入 DB', 'reins_id': reins_id, 'parsed': parsed}
 
-    # 3) Download drawing PDF（如有）
+    # 3) Never auto-download a paid drawing.  Reuse a verified local cache only.
     drawing_web = ''
-    if drawing_available:
-        d_web, d_err = download_drawing_pdf(reins_id, headless=headless)
-        if d_err:
-            # 圖面冇唔係 fatal — 繼續 import，drawing_pdf 留空
-            drawing_web = ''
-        else:
-            drawing_web = d_web
+    try:
+        from reins_document_cache import get_cached_drawing
+        drawing_web = get_cached_drawing(reins_id, parsed.get('latest_update_date', ''))
+        if not drawing_web:
+            # A previously purchased version is still useful for the listing,
+            # but a changed upstream version is never purchased implicitly.
+            drawing_web = get_cached_drawing(reins_id)
+    except Exception:
+        drawing_web = ''
 
     # 3b) Render drawing PDF → images（本地腳本，唔用 AI/OCR）
     drawing_images = []
@@ -1133,6 +1206,8 @@ def import_reins_listing(reins_id, drawing_available=False, headless=True):
         'building_name': parsed.get('building_name'),
         'overview_pdf': overview_web, 'drawing_pdf': drawing_web,
         'drawing_images': drawing_images,
+        'drawing_available': bool(drawing_available),
+        'drawing_deferred': bool(drawing_available and not drawing_web),
         'lat': lat, 'lon': lon,
     }
 

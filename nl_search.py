@@ -60,6 +60,8 @@ _EXECUTOR_SUPPORTED = {
     'pref', 'city', 'property_type', 'price_min', 'price_max',
     'area_min', 'area_max', 'layout_type', 'orientation', 'walk_min',
     'has_drawing', 'building_name', 'station', 'line',
+    'land_rights', 'new_or_used', 'built_year_from', 'built_year_to',
+    'floor_min', 'floor_max', 'room_count_min', 'room_count_max', 'corner_room',
 }
 
 
@@ -118,6 +120,7 @@ def run_search(query, page=1, headless=True):
         'plan': plan,
         'meta': meta,
         'summary': plan_summary(plan),
+        'applied_filters': filters,
         'found': result.get('total_count', 0),
         'page': result.get('page', 1),
         'total_pages': result.get('total_pages', 1),

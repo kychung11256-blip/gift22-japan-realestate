@@ -177,6 +177,40 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_listings_price ON listings(price);
         CREATE INDEX IF NOT EXISTS idx_listings_area ON listings(address);
         CREATE INDEX IF NOT EXISTS idx_listings_source ON listings(source);
+
+        CREATE TABLE IF NOT EXISTS reins_document_cache (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            reins_id TEXT NOT NULL,
+            document_type TEXT NOT NULL CHECK(document_type IN ('drawing')),
+            upstream_version TEXT NOT NULL DEFAULT 'unknown',
+            status TEXT NOT NULL DEFAULT 'requested'
+                CHECK(status IN ('requested','ready','failed','superseded')),
+            local_path TEXT NOT NULL DEFAULT '',
+            sha256 TEXT NOT NULL DEFAULT '',
+            size_bytes INTEGER NOT NULL DEFAULT 0,
+            expected_cost_yen INTEGER NOT NULL DEFAULT 0,
+            requested_by TEXT NOT NULL DEFAULT '',
+            idempotency_key TEXT NOT NULL DEFAULT '',
+            error TEXT NOT NULL DEFAULT '',
+            requested_at TEXT NOT NULL,
+            completed_at TEXT NOT NULL DEFAULT '',
+            UNIQUE(reins_id, document_type, upstream_version)
+        );
+        CREATE INDEX IF NOT EXISTS idx_reins_doc_status
+            ON reins_document_cache(status, requested_at);
+
+        CREATE TABLE IF NOT EXISTS reins_document_ledger (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cache_id INTEGER NOT NULL,
+            event_type TEXT NOT NULL,
+            actor TEXT NOT NULL DEFAULT '',
+            amount_yen INTEGER NOT NULL DEFAULT 0,
+            note TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(cache_id) REFERENCES reins_document_cache(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_reins_doc_ledger_created
+            ON reins_document_ledger(created_at);
     """)
     conn.commit()
 

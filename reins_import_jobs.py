@@ -149,17 +149,13 @@ def _run_job(job_id):
             )
             if r.get('code') == 1:
                 has_drawing = bool(r.get('drawing_pdf'))
-                # partial：overview+DB 成功但 drawing 想要而冇
-                want_drawing = item['drawing_available']
-                if want_drawing and not has_drawing:
-                    _update_item(job, idx, status=ST_PARTIAL,
-                                 listing_id=r.get('id'), action=r.get('action'),
-                                 has_drawing=False,
-                                 error='図面取得失敗（overview+DB 已匯入）')
-                else:
-                    _update_item(job, idx, status=ST_SUCCESS,
-                                 listing_id=r.get('id'), action=r.get('action'),
-                                 has_drawing=has_drawing)
+                # Paid drawings are never downloaded by an import job.  A
+                # missing drawing is expected and handled by the manual cache.
+                _update_item(job, idx, status=ST_SUCCESS,
+                             listing_id=r.get('id'), action=r.get('action'),
+                             has_drawing=has_drawing,
+                             drawing_deferred=bool(r.get('drawing_deferred')),
+                             error=None)
             else:
                 err = r.get('error', 'unknown')
                 if _is_session_error(err):

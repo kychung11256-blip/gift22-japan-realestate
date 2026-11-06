@@ -136,6 +136,12 @@ def _post_filter_and_rank(listings, plan):
     soft preference 唔會變 hard cutoff——只做排序提示，唔會 filter out。
     """
     pf = plan.get('post_filters', {})
+    hf = plan.get('hard_filters', {})
+    orientation_filter = hf.get('orientation') or []
+    if isinstance(orientation_filter, str):
+        orientation_filter = [orientation_filter]
+    orientation_filter = [v for v in orientation_filter if v]
+    single_orientation = orientation_filter[0] if len(orientation_filter) == 1 else None
     out = []
     for l in listings:
         # post_filter：數字範圍（如果 result row 有呢個欄）
@@ -152,6 +158,13 @@ def _post_filter_and_rank(listings, plan):
                     keep = False
                     break
         if keep:
+            # The lightweight REINS row does not expose balcony direction. Preserve
+            # a single server-side REINS orientation constraint as explicit metadata.
+            if single_orientation and not (l.get('orientation') or l.get('effective_orientation')):
+                l = dict(l)
+                l['effective_orientation'] = single_orientation
+                l['orientation_source'] = 'reins_search_filter'
+                l['orientation_filter_applied'] = True
             out.append(l)
 
     # ranking：soft preference 唔參與淘汰，只係之後 ranking 層嘅 signal。

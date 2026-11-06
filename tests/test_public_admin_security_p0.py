@@ -79,7 +79,7 @@ def test_public_ui_defaults_to_no_internal_controls():
     listings = (root / "listings.html").read_text(encoding="utf-8")
     detail = (root / "listing.html").read_text(encoding="utf-8")
     assert 'id="internalCollectionNav"' in listings and 'class="hidden ' in listings
-    assert 'id="internalSourceFilters" class="hidden ' in listings
+    assert 'id="internalSourceFilters"' in listings and 'style="display:none"' in listings
     assert "${canManage ? `<span" in listings
     assert "安全圖片準備中" in listings
     assert "const canManage = !!p.canManage" in detail

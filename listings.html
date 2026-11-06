@@ -99,7 +99,7 @@ tailwind.config = {
   <!-- Filter chips -->
   <div class="mb-5 reveal space-y-2">
     <!-- Price -->
-    <div id="internalSourceFilters" class="hidden flex items-center gap-2">
+    <div id="internalSourceFilters" class="flex items-center gap-2" style="display:none">
       <span class="text-[10px] text-dim w-10 flex-shrink-0">價格</span>
       <div class="chip-row flex-1">
         <span class="chip" data-filter="price" data-val="0-1000">~1000萬</span>
@@ -477,7 +477,7 @@ async function load() {
     canManage = !!d.canManage;
     if (canManage) {
       document.getElementById('internalCollectionNav').classList.remove('hidden');
-      document.getElementById('internalSourceFilters').classList.remove('hidden');
+      document.getElementById('internalSourceFilters').style.display = '';
     } else {
       document.getElementById('bulkBar').classList.add('hidden');
     }

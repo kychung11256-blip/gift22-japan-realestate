@@ -838,6 +838,7 @@ def _public_listing_view(data):
     private_fields = {
         'source', 'source_url', 'reins_id', 'listing_agent_name', 'license_number',
         'brokerage_type', 'commission_type', 'notes_freetext', 'agent_id',
+        'listing_role_label', 'transaction_type', 'registration_no',
         'reins_overview_pdf', 'reins_drawing_pdf', 'reins_registered_at',
         'reins_updated_at', 'raw_overview', 'raw_drawing',
     }

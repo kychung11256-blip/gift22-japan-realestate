@@ -1,5 +1,6 @@
 import base64
 import secrets
+from pathlib import Path
 
 import db
 import server
@@ -72,6 +73,18 @@ def test_internal_pages_and_mutations_fail_closed(tmp_path, monkeypatch):
     assert conn.execute("SELECT COUNT(*) FROM listings").fetchone()[0] == 2
     conn.close()
 
+
+def test_public_ui_defaults_to_no_internal_controls():
+    root = Path(__file__).resolve().parents[1]
+    listings = (root / "listings.html").read_text(encoding="utf-8")
+    detail = (root / "listing.html").read_text(encoding="utf-8")
+    assert 'id="internalCollectionNav"' in listings and 'class="hidden ' in listings
+    assert 'id="internalSourceFilters" class="hidden ' in listings
+    assert "${canManage ? `<span" in listings
+    assert "安全圖片準備中" in listings
+    assert "const canManage = !!p.canManage" in detail
+    assert "${canManage ? `<!-- AI 效果圖" in detail
+    assert "${canManage ? `<button onclick=\"deleteListing" in detail
 
 def test_public_listing_projection_hides_upstream_broker_and_raw_media(tmp_path, monkeypatch):
     client = setup_app(tmp_path, monkeypatch)

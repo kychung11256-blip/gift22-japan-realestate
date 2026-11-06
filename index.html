@@ -548,13 +548,13 @@ function showResults(results,query){
         <div class="flex flex-wrap gap-1 mb-2">
           ${(p.effective_orientation||p.orientation)?`<span class="text-[10px] px-2 py-0.5 rounded-full bg-good/10 text-good font-semibold">${p.effective_orientation||p.orientation}向</span>`:'<span class="text-[10px] px-2 py-0.5 rounded-full bg-warn/10 text-warn font-semibold">朝向待確認</span>'}
           <span class="text-[10px] px-2 py-0.5 rounded-full bg-info/10 text-info font-semibold">${p.structure||''}</span>
-          <span class="text-[10px] px-2 py-0.5 rounded-full ${(p.yield_surface||0)>=5?'bg-warn/10 text-warn':'bg-info/10 text-info'} font-semibold">表面${p.yield_surface||0}%</span>
+          ${Number(p.yield_surface)>0?`<span class="text-[10px] px-2 py-0.5 rounded-full ${Number(p.yield_surface)>=5?'bg-warn/10 text-warn':'bg-info/10 text-info'} font-semibold">表面${p.yield_surface}%</span>`:'<span class="text-[10px] px-2 py-0.5 rounded-full bg-warn/10 text-warn font-semibold">利回待確認</span>'}
         </div>
         <div class="flex flex-wrap gap-1">
-          ${riskBadge(p.disaster_flood||p.disaster?.flood||'low','洪水')}
-          ${riskBadge(p.disaster_earthquake||p.disaster?.earthquake||'low','地震')}
-          ${riskBadge(p.disaster_liquefaction||p.disaster?.liquefaction||'low','液状化')}
-          ${riskBadge(p.disaster_tsunami||p.disaster?.tsunami||'low','津波')}
+          ${riskBadge(p.mlit_checked_at?(p.disaster_flood||p.disaster?.flood):'unknown','洪水')}
+          ${riskBadge(p.mlit_checked_at?(p.disaster_earthquake||p.disaster?.earthquake):'unknown','地震')}
+          ${riskBadge(p.mlit_checked_at?(p.disaster_liquefaction||p.disaster?.liquefaction):'unknown','液状化')}
+          ${riskBadge(p.mlit_checked_at?(p.disaster_tsunami||p.disaster?.tsunami):'unknown','津波')}
         </div>
         <div class="text-xs text-dim mt-2">${p.floor||0}階 / ${p.total_floors||0}階建 · ${p.land_rights||''} · <span class="font-semibold text-gold">${p.listing_role_label||'身份待確認'}</span></div>
         <div class="grid ${canManage?'grid-cols-2':'grid-cols-1'} gap-2 mt-3">
@@ -569,6 +569,7 @@ function showResults(results,query){
 }
 
 function riskBadge(level,label){
+  if(!level||level==='unknown')return `<span class="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-warn/10 text-warn">${label}：待評估</span>`;
   const cls=level==='low'?'bg-good/10 text-good':level==='medium'?'bg-warn/10 text-warn':'bg-bad/10 text-bad';
   return `<span class="text-[10px] px-2 py-0.5 rounded-full font-semibold ${cls}">${label}</span>`;
 }

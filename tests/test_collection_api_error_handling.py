@@ -14,7 +14,11 @@ def _open_collection_with_search_response(status=200, content_type="application/
 
     def route_handler(route):
         url = route.request.url
-        if url.endswith("/api/collection/cities"):
+        if url.endswith("/config/commercial.js"):
+            route.fulfill(status=200, content_type="application/javascript", body=(ROOT / "config/commercial.js").read_text())
+        elif url.endswith("/api/auth/session"):
+            route.fulfill(status=200, content_type="application/json", body='{"user":{"role":"admin"},"csrf_token":"test-csrf"}')
+        elif url.endswith("/api/collection/cities"):
             route.fulfill(
                 status=200,
                 content_type="application/json",
@@ -61,7 +65,7 @@ def test_fetch_page_200_json_displays_results():
     playwright, browser, page = _open_collection_with_search_response(body=body)
     try:
         status = _click_search_and_status(page)
-        assert "検索到 1 件" in status
+        assert "搜尋到 1 件" in status
         assert "パークホームズ浜松町" in page.locator("#resultList").inner_text()
     finally:
         browser.close()
@@ -76,7 +80,7 @@ def test_fetch_page_422_json_displays_backend_message_without_zero_results():
         page.select_option("#walk", "10")
         status = _click_search_and_status(page)
         assert status == "REINS 步行條件必須同時指定沿線及車站"
-        assert "検索到 0 件" not in status
+        assert "搜尋到 0 件" not in status
         assert "暫無結果" not in page.locator("#resultList").inner_text()
     finally:
         browser.close()

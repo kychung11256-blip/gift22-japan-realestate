@@ -19,6 +19,7 @@ def setup_app(tmp_path, monkeypatch):
     monkeypatch.setattr(db, "DB_PATH", str(tmp_path / "security.db"))
     monkeypatch.setenv("WORKBENCH_USER", _TEST_USER)
     monkeypatch.setenv("WORKBENCH_PASSWORD", _TEST_PASSWORD)
+    monkeypatch.setenv("BASIC_AUTH_BOOTSTRAP_ENABLED", "1")
     server.app.config.update(TESTING=True)
     db.init_db()
     conn = db.get_db()
@@ -97,17 +98,17 @@ def test_public_listing_projection_hides_upstream_broker_and_raw_media(tmp_path,
         "brokerage_type", "notes_freetext", "reins_drawing_pdf",
     ):
         assert key not in public
-    assert public["photos"] == ["/uploads/staged/safe.jpg"]
+    assert public["photos"] == []
     assert public["interior_photos"] == []
     assert public["floorplan_images"] == []
-    assert public["staged_photos"] == ["/uploads/staged/safe-stage.jpg"]
+    assert public["staged_photos"] == []
     assert public["canManage"] is False
     assert client.get("/api/listing/DRAFT-PRIVATE-1").status_code == 404
 
     collection = client.get("/api/listings").get_json()
     assert collection["canManage"] is False
     assert collection["count"] == 1
-    assert collection["listings"][0]["photos"] == ["/uploads/staged/safe.jpg"]
+    assert collection["listings"][0]["photos"] == []
 
 
 def test_admin_keeps_full_listing_and_internal_routes(tmp_path, monkeypatch):

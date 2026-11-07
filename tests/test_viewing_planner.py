@@ -43,6 +43,7 @@ def app_client(tmp_path, monkeypatch):
     monkeypatch.setattr(db, "DB_PATH", str(database))
     monkeypatch.setenv("WORKBENCH_USER", "johnny")
     monkeypatch.setenv("WORKBENCH_PASSWORD", "test-password")
+    monkeypatch.setenv("BASIC_AUTH_BOOTSTRAP_ENABLED", "1")
     db.init_db()
     seed_viewing_data()
     return server.app.test_client()

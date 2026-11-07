@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="zh-HK">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -38,6 +38,7 @@ input:focus, select:focus { border-color: #164d3d; }
 @keyframes spin { to { transform: rotate(360deg); } }
 </style>
 <link rel="stylesheet" href="/vendor/workbench-theme.css">
+<script src="/config/commercial.js"></script>
 </head>
 <body class="min-h-screen">
 
@@ -308,7 +309,7 @@ function updateStatusText() {
   if (currentSource === 'reins') {
     const from = (curPage - 1) * pageSize + 1;
     const to = (curPage - 1) * pageSize + currentListings.length;
-    let t = `検索到 ${foundCount} 件（${from}–${to}）｜已選 ${selected.size} 件`;
+    let t = `搜尋到 ${foundCount} 件（${from}–${to}）｜已選 ${selected.size} 件`;
     if (hitLimit) t += ' ｜ ※検索結果が500件上限に達しています。条件を絞り込んでください。';
     status.textContent = t;
   } else {
@@ -335,7 +336,7 @@ function renderResults(listings) {
   if (currentSource === 'reins') {
     container.innerHTML = `
       <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
-        <span class="text-sm text-dim">検索到 ${foundCount} 件｜已選 <span id="selCount">${selected.size}</span> 件（單次最多 ${IMPORT_MAX} 件）</span>
+        <span class="text-sm text-dim">搜尋到 ${foundCount} 件｜已選 <span id="selCount">${selected.size}</span> 件（單次最多 ${IMPORT_MAX} 件）</span>
         <span class="flex gap-3 text-xs">
           <button onclick="selectCurrentPage()" class="text-gold hover:text-gold-light">全選本頁</button>
           <button onclick="deselectCurrentPage()" class="text-dim hover:text-white">取消本頁</button>
@@ -356,7 +357,7 @@ function renderResults(listings) {
             <div class="text-xs text-dim">${esc(l.building_name)}</div>
             <div class="text-xs text-dim">${esc(l.address)}</div>
             <div class="text-xs text-dim">${esc(l.line)} ${esc(l.station)} ${l.walk_min ? '徒歩'+l.walk_min+'分' : ''}</div>
-            <div class="text-[10px] text-dim mt-1">物件番号: ${esc(l.reins_id)} ｜ ${esc(l.built_date)} ｜ 図面: ${l.drawing_available ? '有' : '無'}</div>
+            <div class="text-[10px] text-dim mt-1">物件番号: ${esc(l.reins_id)} ｜ ${esc(Commercial.date(l.built_date))} ｜ 図面: ${l.drawing_available ? '有' : '無'}</div>
           </div>
         </div>
       `).join('')}

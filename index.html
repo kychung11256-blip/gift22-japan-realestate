@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="zh-HK">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Johnny AI - 不動產智能平台</title>
+<title>出雲ランドエステー - 不動產智能平台</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <link rel="stylesheet" href="/vendor/phosphor/regular.css">
@@ -48,6 +48,7 @@ tailwind.config = {
   @media (max-width: 640px) { .chart-wrap { height: 180px; } }
 </style>
 <link rel="stylesheet" href="/vendor/workbench-theme.css">
+<script src="/config/commercial.js"></script>
 </head>
 <body class="min-h-screen font-sans antialiased">
 
@@ -56,7 +57,7 @@ tailwind.config = {
   <div class="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
     <div class="flex items-center gap-3">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="#164d3d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      <span class="font-bold text-lg tracking-tight">Johnny AI</span>
+      <span class="font-bold text-lg tracking-tight">出雲ランドエステー</span>
       <span class="hidden sm:inline text-xs text-dim font-medium">| 不動產智能平台</span>
     </div>
     <div class="flex items-center gap-4">
@@ -278,8 +279,7 @@ async function init(){
   }
   const sel=document.getElementById('valArea');
   Object.keys(DATA.areas).sort().forEach(a=>{sel.innerHTML+=`<option value="${a}">${a}</option>`});
-  drawAreaChart();
-  drawTrendChart();
+  if(window.Chart){drawAreaChart();drawTrendChart();}
   if(canManage) loadOpsKpi();
   loadMarketIntel();
   loadWeather();
@@ -627,12 +627,12 @@ function loadMarketIntel(){
   fetch('/api/market-news').then(r=>r.json()).then(d=>{
     const status=document.getElementById('intelStatus');
     if(!d || d.code!==1){status.textContent='暫無';return;}
-    status.textContent = d.updated_at ? d.updated_at.slice(0,10) : '即時';
+    status.textContent = d.updated_at ? Commercial.timestamp(d.updated_at) : '即時';
     const summary=document.getElementById('intelSummary');
     const escHtml = (s)=>{const div=document.createElement('div');div.textContent=s||'';return div.innerHTML;};
     let html='';
     if(d.highlights && d.highlights.length){
-      html += '<div class="text-xs text-dim mb-1">日本房地產重點（情報官 '+escHtml(d.updated_at)+'）</div>';
+      html += '<div class="text-xs text-dim mb-1">日本房地產重點（情報官 '+escHtml(Commercial.timestamp(d.updated_at))+'）</div>';
       d.highlights.forEach(h=>{
         html += '<div class="text-xs text-muted leading-relaxed flex gap-1.5"><span class="text-gold flex-none">▪</span><span>'+escHtml(h)+'</span></div>';
       });

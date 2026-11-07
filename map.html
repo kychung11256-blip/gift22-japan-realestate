@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="zh-HK">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>地圖 | Johnny AI</title>
+<title>地圖 | 出雲ランドエステー</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
@@ -51,6 +51,7 @@ body{background:#f4f6f3;color:#12221d;font-family:'Geist',system-ui,sans-serif}
 #mapStatus.warn{color:#9a5b1f;border-color:#e7c99d;background:#fff8ed}
 </style>
 <link rel="stylesheet" href="/vendor/workbench-theme.css">
+<script src="/config/commercial.js"></script>
 </head>
 <body>
 
@@ -105,6 +106,7 @@ async function loadMapCapabilities(){
 }
 
 // Use GSI pale basemap (clean, high-res 512px tiles, no POI clutter)
+if(!window.maplibregl){document.getElementById('map').innerHTML='<div style="padding:5rem 2rem;background:#f3f6f3;color:#183a30"><h2>地圖暫時未能載入</h2><p>你仍可查看所有公開物件及聯絡顧問。</p><a href="/listings">查看全部物件 →</a></div>';}else{
 const map=new maplibregl.Map({
   container:'map',
   style:{
@@ -139,7 +141,7 @@ async function loadMarkers(){
       `<div style="font-size:11px;color:#68776f;margin-bottom:2px">${p.id}</div>
        <div style="font-size:14px;font-weight:700;margin-bottom:4px">${p.address}</div>
        <div style="font-size:16px;font-weight:700;color:#164d3d;margin-bottom:4px">${(p.price||0).toLocaleString()}万</div>
-       <div style="font-size:11px;color:#68776f">${p.room_layout||''} | ${p.type||''}</div>
+       <div style="font-size:11px;color:#68776f">${Commercial.esc(p.room_layout||'')} | ${Commercial.esc(p.type||'')} · 建築 ${Commercial.esc(Commercial.date(p.built_date_full||p.built_year))}</div>
        ${p.station?`<div style="font-size:11px;color:#68776f">${p.station} ${p.walk_min}分</div>`:''}
        ${p.mlit_use_district?`<div style="font-size:10px;color:#68776f;margin-top:2px">${p.mlit_use_district}</div>`:''}
        <a href="/listing/${p.id}" style="display:inline-block;margin-top:6px;font-size:11px;color:#164d3d;text-decoration:none;border-bottom:1px solid #164d3d">詳細 →</a>`
@@ -410,6 +412,8 @@ function renderRoutePanel(d){
   panel.classList.add('open');
 }
 window.renderRoutePanel=renderRoutePanel;
+
+}
 </script>
 </body>
 </html>

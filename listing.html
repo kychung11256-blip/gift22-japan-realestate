@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="zh-HK">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>物件詳細 | Johnny AI</title>
+<title>物件詳細 | 出雲ランドエステー</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -61,6 +61,7 @@ tailwind.config = {
   .detail-table td { padding: 12px 16px; font-size: 14px; font-weight: 600; border-bottom: 1px solid #e8eeeb; white-space: normal; word-break: break-word; overflow-wrap: anywhere; line-height: 1.55; vertical-align: top; }
 </style>
 <link rel="stylesheet" href="/vendor/workbench-theme.css">
+<script src="/config/commercial.js"></script>
 </head>
 <body class="font-sans antialiased">
 
@@ -147,6 +148,7 @@ function dedupeUrls(items) {
 
 function render(p) {
   const canManage = !!p.canManage;
+  if(!canManage){p={...p,photos:(p.photos||[]).map(x=>Commercial.safeMedia(x.url||x)).filter(Boolean),floorplan_images:(p.floorplan_images||[]).map(x=>Commercial.safeMedia(x.url||x)).filter(Boolean),floorplan_url:Commercial.safeMedia(p.floorplan_url),interior_photos:[],staged_photos:[],reins_overview_pdf:'',reins_drawing_pdf:'',notes_freetext:'',management_company:'',reins_id:'',registration_no:''};}
   const allPhotos = dedupeUrls(p.photos || []);
   const interiorPhotos = (p.interior_photos || []).filter(x => x && (x.url || typeof x === 'string'));
   const interiorPhotoUrls = dedupeUrls(interiorPhotos);
@@ -154,7 +156,7 @@ function render(p) {
   const floorplan = (p.floorplan_images || []).filter(f => f.url || f);
   const fpUrl = p.floorplan_url || (floorplan.length > 0 ? (floorplan[0].url || floorplan[0]) : '');
   // REINS：gallery 用 rendered drawing images（floorplan_images）；其他 source 照舊用 photos+floorplan
-  const isReins = p.source === 'reins';
+  const isReins = canManage && p.source === 'reins';
   const reinsDrawingImgs = isReins ? floorplan.map(f => f.url || f).filter(Boolean) : [];
   const allImages = isReins && reinsDrawingImgs.length > 0
     ? reinsDrawingImgs
@@ -183,15 +185,15 @@ function render(p) {
     <div class="flex items-center justify-between mb-4 mt-4">
       ${canManage ? `<span class="text-xs font-semibold px-3 py-1 rounded-full bg-surface-card border border-border ${src.cls}">${src.label}</span>` : '<span></span>'}
       <div class="text-right">
-        <div class="text-3xl font-extrabold text-gold">${(p.price||0).toLocaleString()}<span class="text-lg text-dim">万円</span></div>
-        ${p.price_per_sqm > 0 ? `<div class="text-xs text-dim">${p.price_per_sqm}万円/m²</div>` : ''}
+        <div class="text-3xl font-extrabold text-gold">${(p.price||0).toLocaleString()}<span class="text-lg text-dim">萬円</span></div>
+        ${p.price_per_sqm > 0 ? `<div class="text-xs text-dim">${p.price_per_sqm}萬円/m²</div>` : ''}
       </div>
     </div>
 
     <!-- Photo Gallery -->
     ${allImages.length > 0 ? `
     <div class="gallery-main mb-4">
-      <img id="galleryMain" src="${esc(allImages[0])}" alt="物件写真" onclick="openGalleryLightbox(0)">
+      <img id="galleryMain" src="${esc(allImages[0])}" alt="物件圖片" onclick="openGalleryLightbox(0)">
       ${allImages.length > 1 ? `
       <button class="gallery-nav gallery-prev" onclick="event.stopPropagation();galleryPrev()">‹</button>
       <button class="gallery-nav gallery-next" onclick="event.stopPropagation();galleryNext()">›</button>
@@ -203,13 +205,13 @@ function render(p) {
       ${allImages.map((u,i) => `<img src="${esc(u)}" class="${i===0?'active':''}" onclick="galleryJump(${i})" onerror="this.style.display='none'">`).join('')}
     </div>
     ` : ''}
-    ` : '<div class="bg-surface-card border border-border rounded-2xl p-8 text-center text-dim mb-6">写真なし</div>'}
+    ` : '<div class="bg-surface-card border border-border rounded-2xl p-8 text-center text-dim mb-6">安全圖片準備中</div>'}
 
     <!-- Title -->
     <h1 class="text-xl font-bold mb-6">${esc(p.address || '')} ${p.room_layout ? esc(p.room_layout) : ''} ${p.size_sqm ? p.size_sqm+'m²' : ''}</h1>
 
     <!-- REINS PDFs -->
-    ${p.source === 'reins' && (p.reins_overview_pdf || p.reins_drawing_pdf) ? `
+    ${canManage && p.source === 'reins' && (p.reins_overview_pdf || p.reins_drawing_pdf) ? `
     <div class="flex gap-3 mb-6">
       ${p.reins_overview_pdf ? `<a href="${esc(p.reins_overview_pdf)}" target="_blank" rel="noopener" class="flex-1 text-center bg-surface-card border border-gold/40 text-gold text-sm font-semibold px-4 py-3 rounded-xl hover:bg-gold/10 transition-colors">📄 REINS 概要</a>` : ''}
       ${p.reins_drawing_pdf ? `<a href="${esc(p.reins_drawing_pdf)}" target="_blank" rel="noopener" class="flex-1 text-center bg-surface-card border border-border text-sm font-semibold px-4 py-3 rounded-xl hover:border-gold/50 transition-colors">📐 図面を見る</a>` : `<div class="flex-1 text-center bg-surface-card border border-border text-dim text-sm px-4 py-3 rounded-xl">図面なし</div>`}
@@ -268,20 +270,20 @@ function render(p) {
     <!-- Key Stats -->
     <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
       <div class="bg-surface-card border border-border rounded-xl p-4 text-center">
-        <div class="text-[11px] text-dim mb-1">専有面積</div>
+        <div class="text-[11px] text-dim mb-1">實用面積</div>
         <div class="text-lg font-bold">${p.size_sqm || '-'}<span class="text-xs text-dim">m²</span></div>
       </div>
       <div class="bg-surface-card border border-border rounded-xl p-4 text-center">
-        <div class="text-[11px] text-dim mb-1">間取り</div>
+        <div class="text-[11px] text-dim mb-1">間隔</div>
         <div class="text-lg font-bold">${esc(p.room_layout || '-')}</div>
       </div>
       <div class="bg-surface-card border border-border rounded-xl p-4 text-center">
-        <div class="text-[11px] text-dim mb-1">所在階</div>
+        <div class="text-[11px] text-dim mb-1">所在樓層</div>
         <div class="text-lg font-bold">${p.floor > 0 ? `${p.floor}階` : '-'}${p.total_floors > 0 ? `<span class="text-xs text-dim">/${p.total_floors}階建</span>` : ''}</div>
       </div>
       <div class="bg-surface-card border border-border rounded-xl p-4 text-center">
-        <div class="text-[11px] text-dim mb-1">築年数</div>
-        <div class="text-lg font-bold">${p.built_date_full ? `<span class="text-xs text-dim mr-1">${esc(p.built_date_full)}</span>` : ''}${p.age > 0 ? `築${p.age}年` : '-'}</div>
+        <div class="text-[11px] text-dim mb-1">建築年月</div>
+        <div class="text-lg font-bold">${esc(Commercial.date(p.built_date_full||p.built_year))}</div>
       </div>
     </div>
 
@@ -290,21 +292,21 @@ function render(p) {
       <h2 class="px-5 py-4 text-sm font-bold text-gold border-b border-border">物件概要</h2>
       <table class="detail-table">
         <tbody>
-          ${row('価格', `${(p.price||0).toLocaleString()}万円`)}
-          ${row('物件番号', esc(p.reins_id))}
-          ${row('物件種別', esc(p.property_type || p.type))}
-          ${row('建物名', esc(p.building_name))}
+          ${row('價格', `${(p.price||0).toLocaleString()}萬円`)}
+          ${row('物件編號', esc(p.reins_id))}
+          ${row('物件類型', esc(p.property_type || p.type))}
+          ${row('大廈名稱', esc(p.building_name))}
           ${row('所在地', esc(p.address))}
-          ${row('間取り', normLayout(p.room_layout))}
-          ${row('専有面積', normArea(p.size_sqm))}
-          ${row('所在階', p.floor > 0 ? `${p.floor}階` : '')}
+          ${row('間隔', normLayout(p.room_layout))}
+          ${row('實用面積', normArea(p.size_sqm))}
+          ${row('所在樓層', p.floor > 0 ? `${p.floor}階` : '')}
           ${row('地上階層', p.floors_above > 0 ? `${p.floors_above}階` : '')}
           ${row('地下階層', p.underground_floors > 0 ? `${p.underground_floors}階` : '')}
-          ${row('向き', esc(p.orientation))}
-          ${row('バルコニー面積', normArea(p.balcony_sqm))}
-          ${row('築年月', normBuiltDate(p.built_date_full))}
+          ${row('朝向', esc(p.orientation))}
+          ${row('露台面積', normArea(p.balcony_sqm))}
+          ${row('築年月', normBuiltDate(p.built_date_full||p.built_year)+(canManage&&p.built_date_full_raw?'<small class="block text-dim">原文：'+esc(p.built_date_full_raw)+'</small>':''))}
           ${row('構造', normStructure(p.structure))}
-          ${row('棟総戸数', p.total_units > 0 ? `${p.total_units}戸` : '')}
+          ${row('總戶數', p.total_units > 0 ? `${p.total_units}戸` : '')}
         </tbody>
       </table>
     </div>
@@ -332,13 +334,13 @@ function render(p) {
     </div>
     ` : ''}
 
-    <!-- 土地 / 権利 -->
+    <!-- 土地 / 權利 -->
     ${(p.land_rights || p.use_district) ? `
     <div class="bg-surface-card border border-border rounded-2xl overflow-hidden mb-6">
-      <h2 class="px-5 py-4 text-sm font-bold text-gold border-b border-border">土地 / 権利</h2>
+      <h2 class="px-5 py-4 text-sm font-bold text-gold border-b border-border">土地 / 權利</h2>
       <table class="detail-table">
         <tbody>
-          ${row('土地権利', esc(p.land_rights))}
+          ${row('土地權利', esc(p.land_rights))}
           ${row('用途地域', esc(p.use_district))}
         </tbody>
       </table>
@@ -352,10 +354,10 @@ function render(p) {
       <table class="detail-table">
         <tbody>
           ${row('管理費', normMoney(p.mgmt_fee, '円'))}
-          ${row('修繕積立金', normMoney(p.repair_reserve, '円'))}
-          ${row('管理会社', esc(p.management_company))}
+          ${row('維修儲備金', normMoney(p.repair_reserve, '円'))}
+          ${row('管理公司', esc(p.management_company))}
           ${row('管理形態', esc(p.management_type))}
-          ${row('駐車場', esc(p.parking))}
+          ${row('停車場', esc(p.parking))}
         </tbody>
       </table>
     </div>
@@ -364,15 +366,15 @@ function render(p) {
     <!-- 取引狀態 -->
     ${(p.current_status || p.handover_timing || p.transaction_type || p.reins_registered_at || p.reins_updated_at || p.registration_no) ? `
     <div class="bg-surface-card border border-border rounded-2xl overflow-hidden mb-6">
-      <h2 class="px-5 py-4 text-sm font-bold text-gold border-b border-border">取引状況</h2>
+      <h2 class="px-5 py-4 text-sm font-bold text-gold border-b border-border">交易狀態</h2>
       <table class="detail-table">
         <tbody>
           ${row('現況', esc(p.current_status))}
-          ${row('引渡時期', esc(p.handover_timing))}
-          ${row('取引態様', esc(p.transaction_type))}
-          ${row('登録年月日', esc(p.reins_registered_at))}
-          ${row('最新更新年月日', esc(p.reins_updated_at))}
-          ${row('登録No.', esc(p.registration_no))}
+          ${row('交樓時期', esc(p.handover_timing))}
+          ${row('交易方式', esc(p.transaction_type))}
+          ${row('登記日期', esc(Commercial.date(p.reins_registered_at)))}
+          ${row('最新更新年月日', esc(Commercial.date(p.reins_updated_at)))}
+          ${row('登記編號', esc(p.registration_no))}
         </tbody>
       </table>
     </div>
@@ -381,14 +383,14 @@ function render(p) {
     <!-- Floor Plan -->
     ${fpUrl ? `
     <div class="bg-surface-card border border-border rounded-2xl overflow-hidden mb-6">
-      <h2 class="px-5 py-4 text-sm font-bold text-gold border-b border-border">間取り図</h2>
+      <h2 class="px-5 py-4 text-sm font-bold text-gold border-b border-border">平面圖</h2>
       <div class="p-5 flex justify-center bg-surface">
-        <img src="${esc(fpUrl)}" alt="間取り図" class="max-w-full max-h-96 object-contain cursor-pointer rounded-lg" onclick="openLightbox(['${esc(fpUrl)}'],0)" onerror="this.style.display='none'">
+        <img src="${esc(fpUrl)}" alt="平面圖" class="max-w-full max-h-96 object-contain cursor-pointer rounded-lg" onclick="openLightbox(['${esc(fpUrl)}'],0)" onerror="this.style.display='none'">
       </div>
     </div>
     ` : ''}
 
-    <!-- Notes / Remarks（如果備考其實係登録No.，就唔重複顯示） -->
+    <!-- Notes / Remarks（如果備考其實係登記編號，就唔重複顯示） -->
     ${p.notes_freetext && normalizeCompareText(p.notes_freetext) !== normalizeCompareText(p.registration_no) ? `
     <div class="bg-surface-card border border-border rounded-2xl overflow-hidden mb-6">
       <h2 class="px-5 py-4 text-sm font-bold text-gold border-b border-border">備考</h2>
@@ -401,7 +403,7 @@ function render(p) {
 
     <!-- Actions -->
     <div class="flex gap-3">
-      <a href="/listings" class="flex-1 text-center bg-gold hover:bg-gold-dark text-black font-bold py-3.5 rounded-xl text-sm transition-all duration-200 active:scale-[0.98]">戻る</a>
+      <a href="/listings" class="flex-1 text-center bg-gold hover:bg-gold-dark text-black font-bold py-3.5 rounded-xl text-sm transition-all duration-200 active:scale-[0.98]">返回</a>
       ${canManage && p.status === 'draft' ? `<button onclick="confirmListing('${esc(p.id)}')" class="flex-1 border border-gold text-gold font-bold py-3.5 rounded-xl text-sm hover:bg-gold-muted transition-all duration-200 active:scale-[0.98]">確認發佈</button>` : ''}
       ${canManage ? `<button onclick="deleteListing('${esc(p.id)}')" class="border border-bad/30 text-bad font-bold py-3.5 px-5 rounded-xl text-sm hover:bg-bad/10 hover:border-bad/60 transition-all duration-200 active:scale-[0.98]">刪除</button>` : ''}
     </div>
@@ -942,7 +944,7 @@ function z2h(s) {
 }
 function normalizeCompareText(value) {
   // 比較用 normalize：全形英數→半形、trim、移除半形/全形空格、uppercase。
-  // 用嚟判斷 notes_freetext 同 registration_no 係咪同一個登録No.（唔好用 regex 估）。
+  // 用嚟判斷 notes_freetext 同 registration_no 係咪同一個登記編號（唔好用 regex 估）。
   if (value === null || value === undefined) return '';
   return z2h(String(value)).replace(/[ 　]/g, '').trim().toUpperCase();
 }
@@ -956,17 +958,7 @@ function normArea(n) {
   if (n === null || n === undefined || n === '' || isNaN(Number(n))) return '';
   return Number(n) + '㎡';
 }
-function normBuiltDate(s) {
-  // 令和7年8月 → 令和7年8月（2025年8月）；平成16年9月 → 平成16年9月（2004年9月）
-  if (!s) return '';
-  const m = String(s).match(/(令和|平成|昭和)\s*(\d+)\s*年\s*(\d+)?\s*月?/);
-  if (!m) return esc(s);
-  const base = { '令和': 2018, '平成': 1988, '昭和': 1925 }[m[1]];
-  if (!base) return esc(s);
-  const western = base + parseInt(m[2], 10);
-  const month = m[3] ? parseInt(m[3], 10) + '月' : '';
-  return `${esc(s)}（${western}年${month}）`;
-}
+function normBuiltDate(s) { return esc(Commercial.date(s)); }
 
 function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
 

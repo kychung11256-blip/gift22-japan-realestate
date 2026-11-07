@@ -21,6 +21,7 @@ def setup_db(tmp_path, monkeypatch):
     monkeypatch.setattr(db, "DB_PATH", str(database))
     monkeypatch.setenv("WORKBENCH_USER", _TEST_USER)
     monkeypatch.setenv("WORKBENCH_PASSWORD", _TEST_PASSWORD)
+    monkeypatch.setenv("BASIC_AUTH_BOOTSTRAP_ENABLED", "1")
     db.init_db()
     return database, server.app.test_client()
 
@@ -125,7 +126,12 @@ def test_bulk_add_shortlists_is_auth_required_idempotent_and_status_safe(tmp_pat
 
     denied = client.post("/api/client-shortlists/bulk-add", json={"client_ids": ["C1"], "listing_ids": ["L1"]})
     assert denied.status_code == 401
-    assert hashlib.sha256(database.read_bytes()).hexdigest() == before
+    # Denials intentionally append audit rows; business state must remain identical.
+    conn = db.get_db()
+    assert conn.execute('SELECT COUNT(*) FROM client_shortlists').fetchone()[0] == 0
+    assert conn.execute("SELECT COUNT(*) FROM listings WHERE status='draft'").fetchone()[0] == 2
+    assert conn.execute("SELECT COUNT(*) FROM audit_log WHERE allowed=0").fetchone()[0] >= 1
+    conn.close()
 
     resp = client.post(
         "/api/client-shortlists/bulk-add",

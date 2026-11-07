@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>全部物件 - Johnny AI</title>
+<title>全部物件 - 出雲ランドエステー</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <link rel="stylesheet" href="/vendor/phosphor/regular.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -49,6 +49,7 @@ tailwind.config = {
   .card-check:hover { border-color: #164d3d; }
 </style>
 <link rel="stylesheet" href="/vendor/workbench-theme.css">
+<script src="/config/commercial.js"></script>
 </head>
 <body class="min-h-screen font-sans antialiased">
 
@@ -57,7 +58,7 @@ tailwind.config = {
     <div class="flex items-center gap-3">
       <a href="/" class="flex items-center gap-3 hover:opacity-80 transition-opacity">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="#164d3d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        <span class="font-bold text-lg tracking-tight">Johnny AI</span>
+        <span class="font-bold text-lg tracking-tight">出雲ランドエステー</span>
       </a>
     </div>
     <div class="flex items-center gap-4">
@@ -275,9 +276,9 @@ function renderCards(listings) {
             // REINS card 主圖優先級：1) drawing_page image (floorplan_images) 2) photos 3) 写真なし
             const fpImgs = (l.floorplan_images || []).map(f => f.url || f).filter(Boolean);
             const extPhotos = (l.photos || []).filter(u => typeof u === 'string');
-            const firstImg = fpImgs[0] || extPhotos[0] || '';
+            const firstImg = [...fpImgs,...extPhotos].map(u=>canManage?u:Commercial.safeMedia(u)).find(Boolean)||'';
             return firstImg
-              ? `<img src="${firstImg}" alt="" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" onerror="this.parentElement.innerHTML='<i class=\\'ph ph-image text-3xl text-dim\\'></i>'">`
+              ? `<img src="${esc(firstImg)}" alt="" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" onerror="this.parentElement.innerHTML='<i class=\\'ph ph-image text-3xl text-dim\\'></i>'">`
               : `<div class="text-center text-dim"><i class="ph ph-image text-3xl"></i><div class="text-[11px] mt-2">安全圖片準備中</div></div>`;
           })()}
           ${canManage ? `<span class="absolute top-3 left-3 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gold/20 text-gold border border-gold/30">${sourceBadge(l.source)}</span>` : ''}
@@ -293,7 +294,7 @@ function renderCards(listings) {
           </div>
           <div class="flex items-center gap-2 text-[10px]">
             <span class="px-2 py-0.5 rounded-full bg-info/10 text-info">${l.structure||'--'}</span>
-            ${l.age ? `<span class="px-2 py-0.5 rounded-full bg-warn/10 text-warn">築${l.age}年</span>` : ''}
+            ${l.built_date_full||l.built_year ? `<span class="px-2 py-0.5 rounded-full bg-warn/10 text-warn">${esc(Commercial.date(l.built_date_full||l.built_year))}</span>` : ''}
             <span class="px-2 py-0.5 rounded-full bg-good/10 text-good">${l.effective_orientation||'朝向待確認'}</span>
             ${canManage ? `<span class="px-2 py-0.5 rounded-full bg-gold/10 text-gold">${l.listing_role_label||'身份待確認'}</span>` : ''}
           </div>
@@ -444,7 +445,7 @@ function exportCSV() {
   const selected = allListings.filter(l => selectedIds.has(l.id));
   if (selected.length === 0) return;
 
-  const headers = ['地址', '價格(万円)', '面積(m²)', '間取り', '車站', '步行(分)', '築年数', '表面利回(%)', '來源'];
+  const headers = ['地址', '價格(万円)', '面積(m²)', '間取り', '車站', '步行(分)', '建築年月', '表面回報(%)', ...(canManage ? ['來源'] : [])];
   const rows = selected.map(l => [
     (l.address || '').replace(/,/g, ' '),
     l.price || 0,
@@ -452,9 +453,9 @@ function exportCSV() {
     l.room_layout || '',
     l.station || '',
     l.walk_min || 0,
-    l.age || 0,
+    Commercial.date(l.built_date_full||l.built_year),
     l.yield_surface || 0,
-    sourceLabel(l.source),
+    ...(canManage ? [sourceLabel(l.source)] : []),
   ]);
 
   const BOM = '\uFEFF';
@@ -464,7 +465,7 @@ function exportCSV() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `johnny-listings-${new Date().toISOString().slice(0,10)}.csv`;
+  a.download = `izumole-listings-${new Date().toISOString().slice(0,10)}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }

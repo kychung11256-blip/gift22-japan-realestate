@@ -28,6 +28,7 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(cache, "__file__", str(tmp_path / "reins_document_cache.py"))
     monkeypatch.setenv("WORKBENCH_USER", _TEST_USER)
     monkeypatch.setenv("WORKBENCH_PASSWORD", _TEST_PASSWORD)
+    monkeypatch.setenv("BASIC_AUTH_BOOTSTRAP_ENABLED", "1")
     monkeypatch.delenv("REINS_PAID_DOWNLOAD_DAILY_LIMIT", raising=False)
     monkeypatch.delenv("REINS_PAID_DOWNLOAD_MONTHLY_LIMIT", raising=False)
     db.init_db()

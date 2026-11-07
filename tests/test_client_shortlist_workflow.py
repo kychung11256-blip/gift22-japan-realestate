@@ -14,6 +14,7 @@ def test_client_shortlist_is_private_and_visible_in_workbench(tmp_path, monkeypa
     monkeypatch.setattr(db, "DB_PATH", str(database))
     monkeypatch.setenv("WORKBENCH_USER", "johnny")
     monkeypatch.setenv("WORKBENCH_PASSWORD", "test-password")
+    monkeypatch.setenv("BASIC_AUTH_BOOTSTRAP_ENABLED", "1")
     db.init_db()
 
     conn = db.get_db()

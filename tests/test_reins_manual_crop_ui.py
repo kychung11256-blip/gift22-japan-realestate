@@ -30,13 +30,20 @@ def _open_listing():
 
     def route_handler(route):
         url = route.request.url
-        if url.endswith("/api/listing/REINS-TEST-1"):
+        if url.endswith("/config/commercial.js"):
+            route.fulfill(status=200, content_type="application/javascript", body=(ROOT / "config/commercial.js").read_text())
+        elif url.endswith("/api/auth/session"):
+            route.fulfill(status=200, content_type="application/json", body=json.dumps({"user": {"role": "admin"}, "csrf_token": "unit-csrf"}))
+        elif url.endswith("/api/public-contact"):
+            route.fulfill(status=404, content_type="application/json", body='{}')
+        elif url.endswith("/api/listing/REINS-TEST-1"):
             route.fulfill(
                 status=200,
                 content_type="application/json",
                 body=json.dumps(
                     {
                         "id": "REINS-TEST-1",
+                        "canManage": True,
                         "source": "reins",
                         "price": 30000,
                         "address": "東京都港区",
@@ -79,6 +86,7 @@ def _open_listing():
             )
         elif url.endswith("/api/reins-photo-manual-crop/REINS-TEST-1"):
             payload = route.request.post_data_json
+            assert route.request.headers.get("x-csrf-token") == "unit-csrf"
             state["manual_payloads"].append(payload)
             crop = payload["crop"]
             w = round(crop["width"] * 1000)
@@ -115,8 +123,13 @@ def _open_listing():
             route.fulfill(status=200, content_type="text/html", body=LISTING_HTML.read_text(encoding="utf-8"))
 
     page.route("**/*", route_handler)
-    page.goto("http://listing.test/listing/REINS-TEST-1")
-    page.wait_for_selector("button:has-text('從 REINS 圖面提取相片')")
+    try:
+        page.goto("http://listing.test/listing/REINS-TEST-1")
+        page.wait_for_selector("button:has-text('從 REINS 圖面提取相片')")
+    except Exception:
+        browser.close()
+        playwright.stop()
+        raise
     return playwright, browser, page, state
 
 

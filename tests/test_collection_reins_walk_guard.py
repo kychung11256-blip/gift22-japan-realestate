@@ -12,9 +12,13 @@ _TEST_PASSWORD = secrets.token_urlsafe(24)
 
 
 @pytest.fixture()
-def client(monkeypatch):
+def client(monkeypatch, tmp_path):
+    import db
+    monkeypatch.setattr(db, "DB_PATH", str(tmp_path / "walk.db"))
+    db.init_db()
     monkeypatch.setenv("WORKBENCH_USER", _TEST_USER)
     monkeypatch.setenv("WORKBENCH_PASSWORD", _TEST_PASSWORD)
+    monkeypatch.setenv("BASIC_AUTH_BOOTSTRAP_ENABLED", "1")
     server.app.config.update(TESTING=True)
     return server.app.test_client()
 

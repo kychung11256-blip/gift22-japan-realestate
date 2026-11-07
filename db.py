@@ -247,6 +247,12 @@ def init_db():
     except Exception as e:
         print(f"[db migration] {e}", flush=True)
 
+    # Idempotent commercial authorization/media migration; never seed users.
+    from authz import init_auth_schema
+    init_auth_schema(conn)
+    from commercial_media import ensure_schema as ensure_media_schema
+    ensure_media_schema(conn)
+    conn.commit()
     # Seed disabled — start with empty DB
     conn.close()
 

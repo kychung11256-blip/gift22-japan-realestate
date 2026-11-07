@@ -38,6 +38,16 @@ from reins_photo_extractor import CONTROLLED_TEMP_ROOT, ExtractionError, _previe
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB
+import authz
+app.config.update(SECRET_KEY=os.environ.get('FLASK_SECRET_KEY') or os.urandom(32),
+                  SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE='Lax',
+                  SESSION_COOKIE_SECURE=os.environ.get('SESSION_COOKIE_SECURE', '1') == '1')
+from commercial_api import register as register_commercial
+register_commercial(app)
+from commercial_policy import register as register_policy
+register_policy(app)
+from commercial_media import register as register_media
+register_media(app)
 
 
 class _RedactPreviewTokenFilter(logging.Filter):
@@ -95,6 +105,8 @@ def _json_http_error(e):
             429: '請求太頻密，請稍後再試。',
         }
         return _json_error(msg_map.get(status, '睇樓路線 API 發生錯誤。'), status, code_map.get(status, 'HTTP_ERROR'), rid)
+    if request.path.startswith('/api/') or request.path.startswith('/login/') or request.path == '/logout':
+        return _json_error(e.name, e.code, {401:'AUTH_REQUIRED',403:'FORBIDDEN',404:'NOT_FOUND',405:'METHOD_NOT_ALLOWED'}.get(e.code,'HTTP_ERROR'))
     return e
 
 
@@ -110,7 +122,11 @@ def _json_unexpected_error(e):
 
 
 def _workbench_auth_required(view):
-    """Fail-closed HTTP Basic protection for the private workbench and v1 API."""
+    return authz.require_roles('admin','agent')(view)
+
+
+def _legacy_workbench_auth_required(view):
+    """Legacy reference; not used for authorization."""
     @wraps(view)
     def wrapped(*args, **kwargs):
         expected_user = os.environ.get('WORKBENCH_USER', 'johnny')
@@ -139,6 +155,11 @@ def _workbench_auth_required(view):
 
 
 def _workbench_auth_valid():
+    user = authz.effective_user()
+    return bool(user and user['role'] in {'admin','agent'})
+
+
+def _legacy_workbench_auth_valid():
     expected_user = os.environ.get('WORKBENCH_USER', 'johnny')
     expected_password = os.environ.get('WORKBENCH_PASSWORD', '')
     auth = request.authorization
@@ -258,7 +279,7 @@ def static_files(filename):
         'index.html', 'map.html', 'listings.html', 'listing.html',
         'viewing_route_map.js',
     }
-    public_prefixes = ('vendor/', 'config/', 'uploads/thumbs/')
+    public_prefixes = ('vendor/', 'config/')
     if filename in public_files or filename.startswith(public_prefixes):
         return send_from_directory('.', filename)
     return jsonify({'error': 'not found'}), 404
@@ -809,11 +830,7 @@ def scrape_listing():
         return jsonify({'code': 0, 'error': str(e)}), 500
 
 # ── Public/customer-safe listing projection ──
-_PUBLIC_MEDIA_PREFIXES = (
-    '/uploads/staged/',
-    '/uploads/thumbs/',
-    '/api/customer-safe-image/',
-)
+_PUBLIC_MEDIA_PREFIXES = ('/api/customer-safe-image/',)
 
 
 def _public_media_list(value):
@@ -843,12 +860,20 @@ def _public_listing_view(data):
         'reins_updated_at', 'raw_overview', 'raw_drawing',
     }
     for key in list(out):
-        if key in private_fields or key.startswith('reins_'):
+        if key in private_fields or key.startswith('reins_') or key.endswith('_raw') and key not in {'price_raw','price_per_sqm_raw'}:
             out.pop(key, None)
     for key in ('photos', 'interior_photos', 'floorplan_images', 'staged_photos'):
         out[key] = _public_media_list(out.get(key))
     floorplan = out.get('floorplan_url') or ''
     out['floorplan_url'] = floorplan if isinstance(floorplan, str) and floorplan.startswith(_PUBLIC_MEDIA_PREFIXES) else ''
+    import commercial_media
+    safe = commercial_media.safe_assets_for_listing(out.get('id'))
+    out['photos'] = [x['url'] for x in safe if x.get('category') not in {'floorplan','drawing','圖則','平面圖'}]
+    out['floorplan_images'] = [x['url'] for x in safe if x.get('category') in {'floorplan','drawing','圖則','平面圖'}]
+    out['floorplan_url'] = out['floorplan_images'][0] if out['floorplan_images'] else ''
+    out['interior_photos'] = []; out['staged_photos'] = []
+    for key in ('clientAssignments','_client_assignments','raw','raw_data','market_reference_data','management_company','mlit_checked_at'):
+        out.pop(key,None)
     out['canManage'] = False
     return out
 
@@ -1045,8 +1070,9 @@ def reins_photo_preview(listing_id):
 
 
 @app.route('/api/reins-photo-preview-file/<listing_id>/<asset_id>', methods=['GET'])
+@_workbench_auth_required
 def reins_photo_preview_file(listing_id, asset_id):
-    """Serve one temp preview asset by short-lived signed URL; no Basic Auth cache dependency."""
+    """Serve raw temp media only to scoped staff with a short-lived asset token."""
     token = request.args.get('token') or ''
     try:
         path, manifest = preview_asset_path(listing_id, asset_id)
@@ -1162,6 +1188,8 @@ def _v1_client_assignments(conn, listing_ids=None):
     sql += " ORDER BY cs.created_at DESC"
     result = {}
     for row in conn.execute(sql, params).fetchall():
+        if not authz.client_allowed(authz.effective_user(), row['id']):
+            continue
         result.setdefault(row["listing_id"], []).append({
             "id": row["id"],
             "name": row["name"],
@@ -1179,6 +1207,8 @@ def _v1_all_properties():
     conn.close()
     properties = []
     for row in rows:
+        if not authz.listing_allowed(authz.effective_user(), row['id']):
+            continue
         data = _row_to_dict(row)
         data["_client_assignments"] = assignments.get(data["id"], [])
         properties.append(standardize_property(data))
@@ -1282,6 +1312,10 @@ def v1_clients():
             "INSERT INTO clients (id, name, requirement_text, created_at, updated_at) VALUES (?,?,?,?,?)",
             (client_id, name, requirement, now, now),
         )
+        user = authz.effective_user()
+        if user and user['role']=='agent':
+            conn.execute('UPDATE clients SET agent_id=? WHERE id=?',(user['agent_id'],client_id))
+            conn.execute('INSERT OR IGNORE INTO agent_client_assignments(agent_id,client_id) VALUES (?,?)',(user['agent_id'],client_id))
         conn.commit()
         row = conn.execute("SELECT * FROM clients WHERE id=?", (client_id,)).fetchone()
         conn.close()
@@ -1296,7 +1330,7 @@ def v1_clients():
         ORDER BY c.updated_at DESC
     """).fetchall()
     conn.close()
-    return jsonify({'code': 1, 'clients': [dict(row) for row in rows]})
+    return jsonify({'code': 1, 'clients': [dict(row) for row in rows if authz.client_allowed(authz.effective_user(), row['id'])]})
 
 
 @app.route('/api/v1/shortlists', methods=['POST'])
@@ -3036,6 +3070,15 @@ def _row_to_dict(row):
         if d.get('size_sqm') and d['size_sqm'] > 0:
             d['price_per_sqm_raw'] = round(d['price_raw'] / d['size_sqm'], 1)
 
+    from jp_date import parse_japanese_date, iso_z, display_jst
+    for field in ('built_date_full','reins_registered_at','reins_updated_at','created_at','updated_at','mlit_checked_at'):
+        value=d.get(field)
+        if value:
+            d[field+'_raw']=value
+            d[field]=iso_z(value)
+            d[field+'_display']=display_jst(value)
+    if not d.get('built_date_full') and d.get('built_year'):
+        d['built_date_full']=parse_japanese_date(d['built_year'])
     return d
 
 # ── Viewing route planner MVP ──
@@ -3082,6 +3125,9 @@ def _load_plan(plan_id=None, token=None, include_revoked=False, public=False):
             snapshot = {}
         prop = public_property(d)
         prop.update(snapshot if isinstance(snapshot, dict) else {})
+        prop['id'] = d['listing_id']
+        # Saved snapshots never override current media approval state.
+        if public: prop = _public_listing_view(prop)
         stops.append({
             'listingId': d['listing_id'],
             'seq': d['seq'],
@@ -3644,6 +3690,7 @@ def market_news():
 # ── GeoJSON endpoint (published listings as points) ──
 @app.route('/api/listings/geojson')
 def listings_geojson():
+    user = authz.effective_user()
     conn = get_db()
     rows = conn.execute("""
         SELECT id, address, price, station, walk_min, room_layout, type, source,
@@ -3653,6 +3700,8 @@ def listings_geojson():
     conn.close()
     features = []
     for r in rows:
+        if user and not authz.listing_allowed(user, r['id']):
+            continue
         features.append({
             "type": "Feature",
             "geometry": {"type": "Point", "coordinates": [r['longitude'], r['latitude']]},
@@ -3661,7 +3710,7 @@ def listings_geojson():
                 "price": r['price'] // 10000 if r['price'] > 10000000 else r['price'],
                 "station": r['station'] or '', "walk_min": r['walk_min'] or 0,
                 "room_layout": r['room_layout'] or '', "type": r['type'] or '',
-                "source": r['source'] or '',
+                **({"source": r['source'] or ''} if user and user['role'] in {'admin', 'agent'} else {}),
                 "mlit_use_district": r['mlit_use_district'] or '',
             }
         })

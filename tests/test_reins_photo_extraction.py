@@ -1,4 +1,5 @@
 import base64
+import secrets
 import copy
 import hashlib
 import io
@@ -12,8 +13,11 @@ import server
 from reins_photo_extractor import CONTROLLED_TEMP_ROOT, load_manifest
 
 
+_TEST_PASSWORD = secrets.token_urlsafe(24)
+
+
 def auth_header():
-    token = base64.b64encode(b"johnny:test-password").decode("ascii")
+    token = base64.b64encode(f"johnny:{_TEST_PASSWORD}".encode()).decode("ascii")
     return {"Authorization": "Basic " + token}
 
 
@@ -59,7 +63,7 @@ def _setup(tmp_path, monkeypatch):
     database = tmp_path / "listings.db"
     monkeypatch.setattr(db, "DB_PATH", str(database))
     monkeypatch.setenv("WORKBENCH_USER", "johnny")
-    monkeypatch.setenv("WORKBENCH_PASSWORD", "test-password")
+    monkeypatch.setenv("WORKBENCH_PASSWORD", _TEST_PASSWORD)
     monkeypatch.setenv("BASIC_AUTH_BOOTSTRAP_ENABLED", "1")
     monkeypatch.setattr(server, "WORKBENCH_USER", "johnny", raising=False)
     db.init_db()

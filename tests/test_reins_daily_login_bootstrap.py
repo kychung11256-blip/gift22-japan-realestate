@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import secrets
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -13,7 +14,7 @@ JST = ZoneInfo("Asia/Tokyo")
 
 
 def write_env(path: Path) -> None:
-    path.write_text("REINS_MEMBER_ID=dummy\nREINS_PASSWORD=dummy\nREINS_LOGIN_URL=https://example.invalid/\n")
+    path.write_text(f"REINS_MEMBER_ID=dummy\nREINS_PASSWORD={secrets.token_urlsafe(24)}\nREINS_LOGIN_URL=https://example.invalid/\n")
 
 
 def read_events(path: Path) -> list[dict]:
@@ -30,7 +31,7 @@ def test_reins_open_window_boundaries(hour, minute, expected):
 
 
 def test_closed_window_does_not_call_login(tmp_path):
-    env = tmp_path / ".env"
+    env = tmp_path / "ephemeral-credentials.fixture"
     write_env(env)
     log = tmp_path / "login.log"
     called = False
@@ -54,7 +55,7 @@ def test_closed_window_does_not_call_login(tmp_path):
 
 
 def test_successful_fresh_login(tmp_path):
-    env = tmp_path / ".env"
+    env = tmp_path / "ephemeral-credentials.fixture"
     write_env(env)
     code, payload = boot.run_bootstrap(
         now=datetime(2026, 9, 2, 8, 0, tzinfo=JST),
@@ -71,7 +72,7 @@ def test_successful_fresh_login(tmp_path):
 
 
 def test_successful_reused_session(tmp_path):
-    env = tmp_path / ".env"
+    env = tmp_path / "ephemeral-credentials.fixture"
     write_env(env)
     code, payload = boot.run_bootstrap(
         now=datetime(2026, 9, 2, 8, 5, tzinfo=JST),
@@ -87,7 +88,7 @@ def test_successful_reused_session(tmp_path):
 
 @pytest.mark.parametrize("manual", ["captcha", "2fa"])
 def test_captcha_or_2fa_stops_as_failure(tmp_path, manual):
-    env = tmp_path / ".env"
+    env = tmp_path / "ephemeral-credentials.fixture"
     write_env(env)
     code, payload = boot.run_bootstrap(
         now=datetime(2026, 9, 2, 9, 0, tzinfo=JST),
@@ -102,7 +103,7 @@ def test_captcha_or_2fa_stops_as_failure(tmp_path, manual):
 
 
 def test_lock_prevents_duplicate_run(tmp_path):
-    env = tmp_path / ".env"
+    env = tmp_path / "ephemeral-credentials.fixture"
     write_env(env)
     lock = tmp_path / "lock"
     with boot.nonblocking_lock(lock):

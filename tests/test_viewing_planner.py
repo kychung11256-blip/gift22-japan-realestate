@@ -1,4 +1,5 @@
 import base64
+import secrets
 import json
 
 import pytest
@@ -9,8 +10,11 @@ import viewing_planner
 from viewing_planner import UNREACHABLE_ROUTE_SECONDS, ViewingPlanError, decode_polyline, feasible_transit_order, geometry_bounds, google_transit_matrix, google_transit_route, nearest_neighbor_order, optimize_driving, optimize_transit, parse_date_time, parse_iso
 
 
+_TEST_PASSWORD = secrets.token_urlsafe(24)
+
+
 def auth_header():
-    token = base64.b64encode(b"johnny:test-password").decode("ascii")
+    token = base64.b64encode(f"johnny:{_TEST_PASSWORD}".encode()).decode("ascii")
     return {"Authorization": "Basic " + token}
 
 
@@ -42,7 +46,7 @@ def app_client(tmp_path, monkeypatch):
     database = tmp_path / "viewing.db"
     monkeypatch.setattr(db, "DB_PATH", str(database))
     monkeypatch.setenv("WORKBENCH_USER", "johnny")
-    monkeypatch.setenv("WORKBENCH_PASSWORD", "test-password")
+    monkeypatch.setenv("WORKBENCH_PASSWORD", _TEST_PASSWORD)
     monkeypatch.setenv("BASIC_AUTH_BOOTSTRAP_ENABLED", "1")
     db.init_db()
     seed_viewing_data()

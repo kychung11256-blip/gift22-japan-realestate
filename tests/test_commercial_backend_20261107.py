@@ -54,6 +54,6 @@ def test_auth_session_and_login_csrf_fail_closed(app_client):
     r = app_client.get('/api/auth/session')
     assert r.status_code == 200
     assert r.json['user'] is None and r.json['csrf_token']
-    assert app_client.post('/login/staff', json={'identifier':'unknown','password':'invalid'}).status_code == 403
+    assert app_client.post('/login/staff', json={'identifier':'unknown','password':secrets.token_urlsafe(24)}).status_code == 403
     assert app_client.get('/logout').status_code == 405
     assert app_client.post('/logout').status_code == 403

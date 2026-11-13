@@ -1,11 +1,15 @@
 import base64
+import secrets
 
 import db
 import server
 
 
+_TEST_PASSWORD = secrets.token_urlsafe(24)
+
+
 def auth_header():
-    token = base64.b64encode(b"johnny:test-password").decode("ascii")
+    token = base64.b64encode(f"johnny:{_TEST_PASSWORD}".encode()).decode("ascii")
     return {"Authorization": "Basic " + token}
 
 
@@ -13,7 +17,7 @@ def test_client_shortlist_is_private_and_visible_in_workbench(tmp_path, monkeypa
     database = tmp_path / "shortlist.db"
     monkeypatch.setattr(db, "DB_PATH", str(database))
     monkeypatch.setenv("WORKBENCH_USER", "johnny")
-    monkeypatch.setenv("WORKBENCH_PASSWORD", "test-password")
+    monkeypatch.setenv("WORKBENCH_PASSWORD", _TEST_PASSWORD)
     monkeypatch.setenv("BASIC_AUTH_BOOTSTRAP_ENABLED", "1")
     db.init_db()
 

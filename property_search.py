@@ -6,6 +6,7 @@ from an explicit south-facing search instead of being guessed.
 """
 
 import json
+import math
 import re
 import unicodedata
 
@@ -18,12 +19,24 @@ def normalize_text(value):
     return unicodedata.normalize("NFKC", str(value or "")).strip()
 
 
-def price_man(value):
+def _number(value):
     try:
         amount = float(value or 0)
     except (TypeError, ValueError):
         return 0
+    return amount if math.isfinite(amount) else 0
+
+
+def price_man(value):
+    amount = _number(value)
     return amount / 10000 if amount >= PRICE_RAW_YEN_THRESHOLD else amount
+
+
+def _listing_price_man(item):
+    # _row_to_dict floors yen for display; retain raw precision for hard bounds.
+    if item.get("price_raw") not in (None, ""):
+        return _number(item["price_raw"]) / 10000
+    return price_man(item.get("price"))
 
 
 def _searchable_json(value):
@@ -97,9 +110,18 @@ def listing_role(item):
 
 
 def parse_query(query):
-    text = normalize_text(query).lower()
+    text = normalize_text(query).lower().replace("萬", "万")
     residual = text
     constraints = {"price_min": 0, "price_max": 0, "direction": "", "flags": []}
+
+    price_range = re.search(
+        r"(\d+(?:\.\d+)?)\s*[-–〜~]\s*(\d+(?:\.\d+)?)\s*万(?:円)?\s*(?:預算|预算)?",
+        residual,
+    )
+    if price_range:
+        constraints["price_min"] = float(price_range.group(1))
+        constraints["price_max"] = float(price_range.group(2))
+        residual = residual[:price_range.start()] + " " + residual[price_range.end():]
 
     price_patterns = (
         ("price_max", r"(\d+(?:\.\d+)?)\s*億(?:円)?\s*(?:以下|以内|まで)", 10000),
@@ -111,6 +133,25 @@ def parse_query(query):
         match = re.search(pattern, residual)
         if match:
             constraints[key] = float(match.group(1)) * multiplier
+            residual = residual[:match.start()] + " " + residual[match.end():]
+
+    constraints["priceMin"] = constraints["price_min"]
+    constraints["priceMax"] = constraints["price_max"]
+
+    tenure = re.search(r"所有[權権权]", residual)
+    if tenure:
+        constraints["tenure"] = "所有權"
+        residual = residual[:tenure.start()] + " " + residual[tenure.end():]
+
+    numeric_patterns = (
+        ("builtYearMin", r"(\d{4})\s*年\s*(?:以后|以後)\s*(?:建成|建築|建造)?"),
+        ("areaMin", r"(\d+(?:\.\d+)?)\s*(?:平方米|平|m2)\s*以上"),
+        ("floorMin", r"(\d+)\s*[樓层階]\s*以上"),
+    )
+    for key, pattern in numeric_patterns:
+        match = re.search(pattern, residual)
+        if match:
+            constraints[key] = float(match.group(1))
             residual = residual[:match.start()] + " " + residual[match.end():]
 
     direction = canonical_direction(text, require_marker=True)
@@ -144,10 +185,26 @@ def filter_local_listings(items, query):
     constraints = parse_query(query)
     output = []
     for item in items:
-        amount = price_man(item.get("price"))
+        amount = _listing_price_man(item)
+        if (constraints["price_min"] or constraints["price_max"]) and amount <= 0:
+            continue
         if constraints["price_min"] and amount < constraints["price_min"]:
             continue
         if constraints["price_max"] and amount > constraints["price_max"]:
+            continue
+
+        if constraints.get("tenure"):
+            tenure = normalize_text(item.get("land_rights")).replace("権", "權").replace("权", "權")
+            if tenure != constraints["tenure"]:
+                continue
+        if any(
+            key in constraints and (
+                _number(item.get(field)) <= 0 or _number(item.get(field)) < constraints[key]
+            )
+            for key, field in (
+                ("builtYearMin", "built_year"), ("areaMin", "size_sqm"), ("floorMin", "floor"),
+            )
+        ):
             continue
 
         direction, direction_source, direction_confidence = infer_direction(item)
@@ -181,4 +238,4 @@ def filter_local_listings(items, query):
         enriched["listing_role_evidence"] = role["evidence"]
         output.append(enriched)
 
-    return sorted(output, key=lambda item: price_man(item.get("price")))
+    return sorted(output, key=_listing_price_man)

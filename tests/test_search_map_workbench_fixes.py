@@ -1,3 +1,7 @@
+import itertools
+
+import pytest
+
 from property_search import (
     filter_local_listings,
     infer_direction,
@@ -83,6 +87,94 @@ def test_workbench_exposes_role_direction_and_complete_details():
 def test_query_parser_returns_explicit_constraints():
     assert parse_query("3億以下 朝向朝南")["price_max"] == 30000
     assert parse_query("3億以下 朝向朝南")["direction"] == "南"
+
+
+def test_commercial_query_exposes_every_hard_constraint():
+    constraints = parse_query("8000-15000萬預算，所有權，2010年以后建成，60平以上，3樓以上")
+    expected = {
+        "priceMin": 8000, "priceMax": 15000, "tenure": "所有權",
+        "builtYearMin": 2010, "areaMin": 60, "floorMin": 3,
+    }
+    assert {key: constraints.get(key) for key in expected} == expected
+    assert constraints["price_min"] == constraints["priceMin"]
+    assert constraints["price_max"] == constraints["priceMax"]
+    assert constraints["terms"] == []
+
+
+COMMERCIAL_QUERY = "8000-15000萬預算，所有權，2010年以后建成，60平以上，3樓以上"
+
+
+def commercial_listing(listing_id="match", **extra):
+    return listing(listing_id, 8000, land_rights="所有権", built_year=2010, floor=3, **extra)
+
+
+@pytest.mark.parametrize("separator,after,area_unit,floor_unit", list(itertools.product(
+    ("-", "–", "〜", "～"), ("以后", "以後"),
+    ("平", "平方米", "㎡", "m²"), ("樓", "层", "階"),
+)))
+def test_commercial_query_spelling_variants(separator, after, area_unit, floor_unit):
+    query = f"8000{separator}15000萬預算，所有權，2010年{after}建成，60{area_unit}以上，3{floor_unit}以上"
+    constraints = parse_query(query)
+    assert [constraints.get(key) for key in (
+        "priceMin", "priceMax", "tenure", "builtYearMin", "areaMin", "floorMin",
+    )] == [8000, 15000, "所有權", 2010, 60, 3]
+    assert constraints["terms"] == []
+    assert [item["id"] for item in filter_local_listings([commercial_listing()], query)] == ["match"]
+
+
+def test_commercial_query_applies_all_canonical_fields_and_yen_prices():
+    match = commercial_listing()
+    items = [
+        match,
+        dict(match, id="upper", price=15000, land_rights="所有權"),
+        dict(match, id="yen", price=100000000),
+        dict(match, id="normalized-yen", price=12000, price_raw=120000000),
+        dict(match, id="low-price", price=7999),
+        dict(match, id="high-price", price=15001),
+        dict(match, id="high-yen", price=150000001),
+        dict(match, id="rounded-high-yen", price=15000, price_raw=150000001),
+        dict(match, id="leasehold", land_rights="借地権", tenure="所有權"),
+        dict(match, id="old", built_year=2009, builtYear=2020, age=0),
+        dict(match, id="small", size_sqm=59.9, area=100, land_area_sqm=100),
+        dict(match, id="low-floor", floor=2, floors_above=20, total_floors=20),
+    ]
+    for item in items:
+        # Free text must not rescue a failed structured constraint.
+        item["notes_freetext"] = COMMERCIAL_QUERY
+    assert [item["id"] for item in filter_local_listings(items, COMMERCIAL_QUERY)] == [
+        "match", "yen", "normalized-yen", "upper",
+    ]
+
+
+@pytest.mark.parametrize("field", ("price", "land_rights", "built_year", "size_sqm", "floor"))
+@pytest.mark.parametrize("missing", (None, "", 0, "unknown"))
+def test_commercial_constraints_exclude_missing_or_invalid_canonical_data(field, missing):
+    item = commercial_listing()
+    item[field] = missing
+    assert filter_local_listings([item], COMMERCIAL_QUERY) == []
+
+
+@pytest.mark.parametrize("field", ("price", "land_rights", "built_year", "size_sqm", "floor"))
+def test_commercial_constraints_exclude_absent_fields(field):
+    item = commercial_listing()
+    del item[field]
+    assert filter_local_listings([item], COMMERCIAL_QUERY) == []
+
+
+@pytest.mark.parametrize("query", ("3億以下", "15000萬以下", "8000萬以上"))
+def test_price_constraints_keep_legacy_aliases_and_exclude_unknown_price(query):
+    constraints = parse_query(query)
+    assert constraints["priceMin"] == constraints["price_min"]
+    assert constraints["priceMax"] == constraints["price_max"]
+    items = [listing("valid", 10000)] + [listing("missing", value) for value in (None, "", 0, "bad", float("nan"), float("inf"))]
+    assert [item["id"] for item in filter_local_listings(items, query)] == ["valid"]
+
+
+def test_commercial_filters_accept_numeric_strings_but_keep_unparsed_location_terms():
+    item = commercial_listing()
+    item.update(price="100000000", built_year="2010", size_sqm="60.5", floor="3")
+    assert len(filter_local_listings([item], "港区 " + COMMERCIAL_QUERY)) == 1
+    assert filter_local_listings([item], "新宿区 " + COMMERCIAL_QUERY) == []
 
 
 def test_reins_search_accepts_traditional_chinese_ward_suffix():
